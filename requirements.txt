@@ -1,0 +1,4 @@
+# Requires Python 3.10 or newer (select the interpreter before installing).
+# CPU simulation, HTTP service, benchmarks and unittest use only the standard library.
+# No third-party packages are required for the base environment.
+# Optional CUDA support: install requirements-cuda.txt instead.

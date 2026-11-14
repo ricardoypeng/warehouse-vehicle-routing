@@ -1,0 +1,53 @@
+/* Verify independently expandable vehicle/task lists and their footer controls. */
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const [debugPort,out,servicePort='8771']=process.argv.slice(2);
+fs.mkdirSync(out,{recursive:true});
+(async()=>{
+ const pages=await(await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
+ const target=pages.find(p=>p.type==='page'&&p.url.includes(':'+servicePort));assert(target);
+ const ws=new WebSocket(target.webSocketDebuggerUrl);await new Promise((ok,fail)=>{ws.addEventListener('open',ok,{once:true});ws.addEventListener('error',fail,{once:true});});
+ let serial=0;const pending=new Map();
+ ws.addEventListener('message',event=>{const data=JSON.parse(event.data);if(pending.has(data.id)){const p=pending.get(data.id);pending.delete(data.id);data.error?p.reject(Error(JSON.stringify(data.error))):p.resolve(data.result);}});
+ const call=(method,params={})=>new Promise((resolve,reject)=>{const id=++serial;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));});
+ const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
+ const wait=async expression=>{for(let i=0;i<400;i++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,25));}throw Error('Timeout: '+expression);};
+ const assertions=[];const check=async(name,expression)=>{assert(await evaluate(expression),name);assertions.push(name);};
+ const configure=async count=>{const old=await evaluate('identity');await evaluate(`$('vehicles').value=${count};$('tasks').value=${count};$('device').value='cpu';$('planning').value='shortest_path';$('planning').dispatchEvent(new Event('change'));$('create').click()`);await wait(`identity!==${JSON.stringify(old)}&&!busy`);};
+ try{
+  await call('Runtime.enable');await call('Page.enable');await wait(`typeof state!=='undefined'&&state&&!busy`);
+  await configure(201);
+  await check('long lists initially render 50 rows each',`document.querySelectorAll('#fleet-list tr').length===50&&document.querySelectorAll('#task-list tr').length===50`);
+  await check('collapse disabled until expanded; more and all enabled',`$('fleet-collapse').disabled&&$('task-collapse').disabled&&!$('fleet-more').disabled&&!$('fleet-all').disabled&&!$('task-more').disabled&&!$('task-all').disabled`);
+  await check('footer lies below rows and outside initial scroll viewport',`(()=>{const footer=$('fleet-list-controls'),wrap=footer.closest('.table-wrap');return footer.previousElementSibling.tagName==='TABLE'&&footer.getBoundingClientRect().top>=wrap.getBoundingClientRect().bottom;})()`);
+  await evaluate(`(()=>{const wrap=$('fleet-list').closest('.table-wrap');wrap.scrollTop=wrap.scrollHeight;})()`);
+  await check('three actions become visible at the current list bottom',`(()=>{const footer=$('fleet-list-controls'),wrap=footer.closest('.table-wrap'),a=footer.getBoundingClientRect(),b=wrap.getBoundingClientRect();return a.bottom<=b.bottom+1&&a.top>=b.top;})()`);
+  await evaluate(`$('fleet-more').click()`);
+  await check('show more adds 50 vehicles without expanding tasks',`document.querySelectorAll('#fleet-list tr').length===100&&document.querySelectorAll('#task-list tr').length===50&&!$('fleet-collapse').disabled`);
+  await evaluate(`$('task-more').click()`);
+  await check('task list expands independently by 50 rows',`document.querySelectorAll('#task-list tr').length===100&&document.querySelectorAll('#fleet-list tr').length===100`);
+  await evaluate(`$('fleet-all').click();$('task-all').click()`);
+  await check('show all makes previously hidden V200 and T200 accessible',`document.querySelectorAll('#fleet-list tr').length===201&&document.querySelectorAll('#task-list tr').length===201&&!!document.querySelector('#fleet-list tr[data-id="200"]')&&!!document.querySelector('#task-list tr[data-id="200"]')`);
+  await check('more and all disabled after displaying everything',`$('fleet-more').disabled&&$('fleet-all').disabled&&$('task-more').disabled&&$('task-all').disabled&&!$('fleet-collapse').disabled&&!$('task-collapse').disabled`);
+  await evaluate(`document.querySelector('#fleet-list tr[data-id="200"]').click()`);
+  await check('expanded parked vehicle can be selected',`selection.kind==='vehicle'&&selection.id===200`);
+  await evaluate(`document.querySelector('#task-list tr[data-id="200"]').click()`);
+  await check('expanded task can be selected',`selection.kind==='task'&&selection.id===200`);
+  await evaluate(`advance(1)`);await wait('!busy');
+  await check('expanded rows survive simulation refreshes',`document.querySelectorAll('#fleet-list tr').length===201&&document.querySelectorAll('#task-list tr').length===201`);
+  await evaluate(`$('task-filter').value='assigned';$('task-filter').dispatchEvent(new Event('change'))`);
+  await check('task filter resets its list to 50 while vehicles stay expanded',`document.querySelectorAll('#task-list tr').length===50&&$('task-collapse').disabled&&document.querySelectorAll('#fleet-list tr').length===201`);
+  await evaluate(`$('fleet-collapse').click()`);
+  await check('collapse restores 50 rows, top position and disabled state',`document.querySelectorAll('#fleet-list tr').length===50&&$('fleet-collapse').disabled&&!$('fleet-more').disabled&&$('fleet-list').closest('.table-wrap').scrollTop===0`);
+  await evaluate(`$('task-filter').value='all';$('task-filter').dispatchEvent(new Event('change'));$('task-all').click()`);
+  await configure(201);
+  await check('new scenarios reset both list limits',`document.querySelectorAll('#fleet-list tr').length===50&&document.querySelectorAll('#task-list tr').length===50&&$('fleet-collapse').disabled&&$('task-collapse').disabled`);
+  await configure(51);await evaluate(`$('fleet-more').click();$('task-more').click()`);
+  await check('last partial page displays all 51 rows and disables expansion',`document.querySelectorAll('#fleet-list tr').length===51&&document.querySelectorAll('#task-list tr').length===51&&$('fleet-more').disabled&&$('fleet-all').disabled&&$('task-more').disabled&&$('task-all').disabled`);
+  await configure(50);
+  await check('short lists do not show unnecessary footer controls',`$('fleet-list-controls').hidden&&$('task-list-controls').hidden&&document.querySelectorAll('#fleet-list tr').length===50`);
+  await configure(201);await evaluate(`$('fleet-list-controls').scrollIntoView({block:'center'});$('fleet-list').closest('.table-wrap').scrollTop=$('fleet-list').closest('.table-wrap').scrollHeight`);
+  const {data}=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(out,'list-footer.png'),Buffer.from(data,'base64'));
+  fs.writeFileSync(path.join(out,'browser-result.json'),JSON.stringify({passed:true,assertions},null,2));console.log(JSON.stringify({passed:true,assertions}));
+ }finally{ws.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;});

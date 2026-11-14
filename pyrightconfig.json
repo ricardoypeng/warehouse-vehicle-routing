@@ -1,0 +1,6 @@
+{
+  "include": ["main.py", "config", "framework", "algorithms", "tests", "tools"],
+  "exclude": ["tmp"],
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "standard"
+}

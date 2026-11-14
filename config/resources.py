@@ -1,0 +1,16 @@
+"""Resource budgets and execution limits; edit these values before startup."""
+
+# Retained distance arrays per allocator instance, allocated on demand.
+DISTANCE_CACHE_MIB = 128
+DISTANCE_CACHE_BYTES = DISTANCE_CACHE_MIB * 1024 * 1024
+
+MATRIX_ROUTE_CACHE_MIB = 128
+MATRIX_ROUTE_CACHE_BYTES = MATRIX_ROUTE_CACHE_MIB * 1024 * 1024
+
+MAX_PLAN_STEPS = 50000
+MAX_TRIALS = 1024
+MAX_SESSIONS = 128
+MAX_WORKERS = 32
+MAX_STEP_TICKS = 10000
+MAX_RUN_TICKS = 1000000
+MAX_REQUEST_BYTES = 256 * 1024
