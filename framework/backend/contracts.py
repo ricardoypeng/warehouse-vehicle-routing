@@ -21,8 +21,8 @@ class ComputeBackend(Protocol):
     Define scoring operations independently of their CPU or CUDA implementation.
 
     Attributes:
-        requested (str): Device requested by the caller.
-        effective (str): Device actually used after initialization or fallback.
+        requested       (str): Device requested by the caller.
+        effective       (str): Device actually used after initialization or fallback.
         fallback_reason (str | None): Reason for CPU fallback, if any.
     """
 

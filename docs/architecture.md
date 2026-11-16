@@ -79,7 +79,7 @@ TaskView 为不可变快照，未变化任务可复用对象；状态或关联�
 
 ## 通用工具
 
-[framework/utils](../framework/utils/) 保存框架与算法共同使用的基础工具：[图搜索与有界距离缓存](../framework/utils/graph.py) 和 [任务指纹](../framework/utils/fingerprint.py)。内核从此处导入通用工具，不依赖算法包。算法侧的 [兼容导出](../algorithms/common.py) 保留已有 `path`、`distances_to` 导入方式。具体的任务分组、候选堆、路线多样性和评分规则仍属于各算法。
+[framework/utils](../framework/utils/) 保存框架与算法共同使用的基础工具：[图搜索与有界距离缓存](../framework/utils/graph.py)、[静态路口距离与路线展开](../framework/utils/junction.py) 和 [任务指纹](../framework/utils/fingerprint.py)。内核从此处导入通用工具，不依赖算法包。算法侧的 [兼容导出](../algorithms/common.py) 保留已有 `path`、`distances_to` 导入方式。具体的任务分组、候选堆、路线多样性和评分规则仍属于各算法。静态路口缓存按地图共享 V×V 距离表和路线展开表，表行用紧凑数组存储，规划器只读取 `distance()`；`route()` 保留给需要完整路线的调用方和测试，当前内置规划器不使用。两张表合计 12·V² 字节加行开销，规模由场景 rows/columns 上界限定，最大布局约 5.2 MiB/地图；按最大会话数同时驻留时额外内存上限约 670 MiB，不参与可调预算配置。表在首次规划查询时懒构建，`serve`/`run` 的首个 tick 会计入一次性建表成本；基准与比较工具在初始化阶段预构建。
 
 每 tick 分配前扫描任务并复用未变化的不可变 TaskView；规划阶段复用这份任务映射，只对本次分配改变的任务复制映射并更新条目。车辆位置、执行状态和计划重新快照，以包含分配与出入库变化。旧任务映射与旧快照不会被修改。每 tick 保留完整不变量检查，性能优化应先测量快照、检查和寻路的开销，保持旧快照的独立性与批量提案校验语义。
 

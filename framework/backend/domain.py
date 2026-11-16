@@ -101,6 +101,24 @@ class Road:
         """
         return len(self.cells)
 
+    def entry(self) -> Cell:
+        """
+        Return the first road cell entered from the upstream junction.
+
+        Returns:
+            Cell: Canonical road cell at the entrance of this directed segment.
+        """
+        return self.cells[0]
+
+    def exit(self) -> Cell:
+        """
+        Return the last road cell before the downstream junction.
+
+        Returns:
+            Cell: Canonical road cell at the exit of this directed segment.
+        """
+        return self.cells[-1]
+
 
 @dataclass(frozen=True, eq=False)
 class ParkingArea:

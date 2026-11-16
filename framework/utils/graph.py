@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from array import array
 from collections import OrderedDict, deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from weakref import WeakKeyDictionary
 import heapq
 import math
@@ -15,26 +15,18 @@ from config.resources import DISTANCE_CACHE_BYTES
 from ..backend.domain import Cell, CellKind, Map
 
 
-def path(start: Cell | None, goal: Cell | None, penalties: dict[int, float] | None = None) -> tuple[Cell, ...]:
+def _validate_penalties(name: str, values: Mapping[int, float]) -> None:
     """
-    Find a minimum-cost route excluding the starting cell.
+    Validate finite nonnegative values in one penalty mapping.
 
     Args:
-        start     (Cell | None): Current cell; None represents an off-map vehicle.
-        goal      (Cell | None): Destination cell.
-        penalties (dict[int, float] | None): Additional finite nonnegative cost per entered cell.
-
-    Returns:
-        tuple[Cell, ...]: Canonical cells in travel order. Empty when already at the
-            goal or either endpoint is missing.
+        name   (str): Argument name used in the error message.
+        values (Mapping[int, float]): Cell identifier to penalty mapping.
 
     Raises:
-        ValueError: If penalties are invalid, or both endpoints exist but the destination is unreachable.
+        ValueError: If any value is not a finite nonnegative number.
     """
-    penalties = {} if penalties is None else penalties
-    if not isinstance(penalties, Mapping):
-        raise ValueError("penalties must be a mapping of finite nonnegative numbers")
-    for penalty in penalties.values():
+    for penalty in values.values():
         try:
             valid = (
                 isinstance(penalty, (int, float)) and not isinstance(penalty, bool)
@@ -43,17 +35,126 @@ def path(start: Cell | None, goal: Cell | None, penalties: dict[int, float] | No
         except OverflowError:
             valid = False
         if not valid:
-            raise ValueError("penalties must contain finite nonnegative numbers")
+            raise ValueError(f"{name} must contain finite nonnegative numbers")
+
+
+def _validate_scale(name: str, value: object) -> float:
+    """
+    Validate one finite nonnegative heuristic scale.
+
+    Args:
+        name  (str): Argument name used in the error message.
+        value (object): Candidate scale.
+
+    Returns:
+        float: The validated scale.
+
+    Raises:
+        ValueError: If the value is not a finite nonnegative number.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a finite nonnegative number")
+    try:
+        scale = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{name} must be a finite nonnegative number") from exc
+    if not math.isfinite(scale) or scale < 0:
+        raise ValueError(f"{name} must be a finite nonnegative number")
+    return scale
+
+
+def _validate_distance(value: object) -> float:
+    """
+    Validate one static distance-to-goal result.
+
+    Args:
+        value (object): Candidate distance returned by the callback.
+
+    Returns:
+        float: The validated distance, including infinity for an unreachable goal.
+
+    Raises:
+        ValueError: If the value is not a nonnegative number, is NaN, or is
+            negative infinity.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("distance must return a nonnegative number or float('inf')")
+    try:
+        distance = float(value)
+    except OverflowError as exc:
+        raise ValueError("distance must return a nonnegative number or float('inf')") from exc
+    if math.isnan(distance) or distance < 0:
+        raise ValueError("distance must return a nonnegative number or float('inf')")
+    return distance
+
+
+def path(
+    start: Cell | None,
+    goal: Cell | None,
+    penalties: Mapping[int, float] | None = None,
+    *,
+    distance: Callable[[Cell, Cell], float] | None = None,
+    heuristic_penalties: Mapping[int, float] | None = None,
+    penalties_scale: float = 1.0,
+    heuristic_scale: float = 1.0,
+) -> tuple[Cell, ...]:
+    """
+    Find a feasible route excluding the starting cell.
+
+    With both penalty maps empty or all zero and both scales zero, the search is A*
+    and returns a shortest route whenever distance is admissible. Positive penalties
+    enter only h and bias the expansion order, so the returned route can be longer
+    than the minimum step count and is not a penalty-weighted optimum either.
+
+    Args:
+        start               (Cell | None): Current cell; None represents an off-map vehicle.
+        goal                (Cell | None): Destination cell.
+        penalties           (Mapping[int, float] | None): Per-cell congestion estimate added
+            only to the A* heuristic h. The g cost is always the pure entered-cell count;
+            positive penalties therefore make the router detour rather than solve a
+            penalty-weighted shortest path.
+        distance            (Callable[[Cell, Cell], float] | None): Optional admissible
+            static distance-to-goal lookup used as the A* heuristic base. It must never
+            overestimate the remaining step count. The callable must return a
+            nonnegative step count, or float("inf") when the destination is unreachable
+            from the queried cell.
+        heuristic_penalties (Mapping[int, float] | None): Optional additional per-cell
+            future-congestion estimate added only to h. No built-in planner passes it;
+            it is kept for plugin and ablation use.
+        penalties_scale     (float): Multiplier applied to the penalty map in h.
+        heuristic_scale     (float): Multiplier applied to the heuristic penalty map in h.
+
+    Returns:
+        tuple[Cell, ...]: Canonical cells in travel order. Empty when already at the
+            goal or either endpoint is missing. A search with zero penalty maps and
+            scales and admissible distance returns a shortest route.
+
+    Raises:
+        ValueError: If penalties, scales or distance results are invalid, or both
+            endpoints exist but the destination is unreachable.
+    """
+    penalties = {} if penalties is None else penalties
+    if not isinstance(penalties, Mapping):
+        raise ValueError("penalties must be a mapping of finite nonnegative numbers")
+    if heuristic_penalties is not None and not isinstance(heuristic_penalties, Mapping):
+        raise ValueError("heuristic_penalties must be a mapping of finite nonnegative numbers")
+    if distance is not None and not callable(distance):
+        raise ValueError("distance must be callable")
+    penalties_scale = _validate_scale("penalties_scale", penalties_scale)
+    heuristic_scale = _validate_scale("heuristic_scale", heuristic_scale)
+    _validate_penalties("penalties", penalties)
+    if heuristic_penalties is not None:
+        _validate_penalties("heuristic_penalties", heuristic_penalties)
     if start is None or goal is None:
         return ()
     if start is goal:
         return ()
     serial = count()
-    heap: list[tuple[float, int, Cell]] = [(0, next(serial), start)]
+    heap: list[tuple[float, int, float, Cell]] = [(0.0, next(serial), 0.0, start)]
     best: dict[int, float] = {start.id: 0}
     parent = {}
     while heap:
-        cost, _, cell = heapq.heappop(heap)
+        _, _, cost, cell = heapq.heappop(heap)
         if cost != best.get(cell.id):
             continue
         if cell is goal:
@@ -63,11 +164,17 @@ def path(start: Cell | None, goal: Cell | None, penalties: dict[int, float] | No
                 cell = parent[cell.id]
             return tuple(reversed(result))
         for neighbor in cell.neighbors:
-            new = cost + 1 + penalties.get(neighbor.id, 0)
+            new = cost + 1
             if new < best.get(neighbor.id, float("inf")):
                 best[neighbor.id] = new
                 parent[neighbor.id] = cell
-                heapq.heappush(heap, (new, next(serial), neighbor))
+                estimate = new
+                if distance is not None:
+                    estimate += _validate_distance(distance(neighbor, goal))
+                estimate += penalties_scale * penalties.get(neighbor.id, 0.0)
+                if heuristic_penalties is not None:
+                    estimate += heuristic_scale * heuristic_penalties.get(neighbor.id, 0.0)
+                heapq.heappush(heap, (estimate, next(serial), new, neighbor))
     raise ValueError(f"Unreachable route: {start.id} -> {goal.id}")
 
 
@@ -128,7 +235,8 @@ def _bfs(adjacency: dict[int, tuple[int, ...]], start: int) -> dict[int, int]:
 
 
 class DistanceCache:
-    """Bound compact BFS tables by bytes, with LRU eviction across directions.
+    """
+    Bound compact BFS tables by bytes, with LRU eviction across directions.
 
     Only traversable cells occupy table entries. A table larger than the budget
     is returned for the current query without being retained. Map topology is

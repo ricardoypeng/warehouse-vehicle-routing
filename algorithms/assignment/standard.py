@@ -146,7 +146,8 @@ class RoadGreedy(Algorithm):
     def _offer_tasks(
         pool: list[tuple[float, int, int]], distance: float, tasks: list[TaskView], limit: int,
     ) -> None:
-        """Retain the best bounded task keys for one source in a max-heap.
+        """
+        Retain the best bounded task keys for one source in a max-heap.
 
         Tasks in a pickup group are already ordered by release tick and ID and
         have the same source distance. Once one cannot improve a full pool, no
@@ -154,10 +155,10 @@ class RoadGreedy(Algorithm):
         from fleet size, not a tunable cutoff that could change the matching.
 
         Args:
-            pool (list[tuple[float, int, int]]): Negated task keys, updated in place.
+            pool     (list[tuple[float, int, int]]): Negated task keys, updated in place.
             distance (float): Directed source-to-pickup distance, or infinity.
-            tasks (list[TaskView]): One pickup group sorted by release tick and ID.
-            limit (int): Maximum retained task count derived from available vehicles.
+            tasks    (list[TaskView]): One pickup group sorted by release tick and ID.
+            limit    (int): Maximum retained task count derived from available vehicles.
         """
         if distance == float("inf"):
             return

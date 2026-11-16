@@ -13,20 +13,22 @@ from algorithms.spec import AlgorithmSpec, ParameterSpec, normalize_options, par
 from framework.backend.contracts import Algorithm, ComputeBackend, PlanUpdates, WorldView
 from framework.backend.cpu.compute import CPUBackend
 from framework.backend.domain import Cell, ExecutionState, MovementPlan
+from framework.utils.junction import junction_cache
 
 ACTIVE = (ExecutionState.TO_PICKUP, ExecutionState.TO_DROPOFF, ExecutionState.RETURNING)
 
 MATRIX_PARAMETERS = (
-    ParameterSpec("candidate_count", "候选路线数量", "int", 4, "每组起终点最多生成的不同路线数。", 1, 32),
+    ParameterSpec("candidate_count", "候选路线数量", "int", 6, "每组起终点最多生成的不同路线数。", 1, 32),
     ParameterSpec(
-        "replan_wait", "重规划等待 tick", "int", 4, "连续等待达到此值后重新选择路线。", 1, 10000
+        "replan_wait", "重规划等待 tick", "int", 3, "连续等待达到此值后重新选择路线。", 1, 10000
     ),
     ParameterSpec(
-        "diversity_penalty", "候选多样性惩罚", "float", 3.0, "生成下一候选时对已用格点增加的代价。", 0, 1000
+        "diversity_penalty", "候选多样性惩罚", "float", 1.0,
+        "生成下一候选时只加入 A* 启发估计 h 的惩罚，g 仍为纯步数。", 0, 1000
     ),
     ParameterSpec("distance_weight", "距离权重", "float", 1.0, "评分中每个路线格点的权重。", 0, 1000),
     ParameterSpec(
-        "occupancy_weight", "占用权重", "float", 8.0, "评分中被其他车辆占用格点的权重。", 0, 1000
+        "occupancy_weight", "占用权重", "float", 1.0, "评分中被其他车辆占用格点的权重。", 0, 1000
     ),
 )
 
@@ -60,11 +62,12 @@ class MatrixRoutes(Algorithm):
         Batch candidate-route features and select minimum-score movement plans.
 
         Replans empty plans or vehicles waiting at least replan_wait ticks. Caches
-        up to candidate_count distinct routes per source/goal pair using penalized
-        path searches with diversity_penalty added after each candidate. Each
+        up to candidate_count distinct routes per source/goal pair using path
+        searches whose diversity_penalty enters the A* heuristic only (g stays the
+        pure step count, so candidates may detour). Each
         feature row contains route length and the number of cells occupied by
         other vehicles. The backend weights these by distance_weight and
-        occupancy_weight (defaults 1 and 8); the minimum-score candidate becomes a
+        occupancy_weight (both default 1); the minimum-score candidate becomes a
         replacement plan. Route generation and feature extraction remain on CPU;
         only scoring uses the optional CUDA backend. The cache is discarded when
         this instance is reused with another map. LRU retention is bounded by
@@ -93,8 +96,9 @@ class MatrixRoutes(Algorithm):
             if choices is None:
                 generated = []
                 penalties = {}
+                distance = junction_cache(world.map).distance
                 for _ in range(self.options["candidate_count"]):
-                    route = path(v.cell, v.goal, penalties)
+                    route = path(v.cell, v.goal, penalties, distance=distance)
                     if route not in generated:
                         generated.append(route)
                     for cell in route:

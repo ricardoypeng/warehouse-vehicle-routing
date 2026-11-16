@@ -6,8 +6,8 @@
 
 | 层级 | 入口 | 用途 |
 | --- | --- | --- |
-| 后端自动化测试 | [main.py](../main.py) 的 `self-test` 命令 | 执行 87 个 Python unittest 用例，检查实体、移动、任务、算法、参数、HTTP 和并行执行 |
-| 浏览器回归测试 | [浏览器脚本目录](../tests/) 中的 `browser_*.cjs` | 使用真实浏览器检查交互、参数编辑、事件、列表展开和渲染稳定性；不计入 87 个 Python 用例 |
+| 后端自动化测试 | [main.py](../main.py) 的 `self-test` 命令 | 执行 120 个 Python unittest 用例，检查实体、移动、任务、算法、参数、HTTP 和并行执行 |
+| 浏览器回归测试 | [浏览器脚本目录](../tests/) 中的 `browser_*.cjs` | 使用真实浏览器检查交互、参数编辑、事件、列表展开和渲染稳定性；不计入 120 个 Python 用例 |
 | 算法启动检查 | [Registry](../framework/registry.py) | 导入候选算法并运行小型场景，仅将通过的算法加入可选列表 |
 | 静态类型检查 | [Python 源码](../framework/) 及算法、入口和测试 | 检查类型契约；与运行测试分开执行，不证明运行逻辑或算法效果 |
 
@@ -33,7 +33,7 @@
 - 距离数组缓存与候选路线缓存使用不同数据结构、计费规则和调用位置，需要各自验证。
 - 后端 JSON 正确与浏览器实际展示正确需要分别验证；播放竞态和绘制稳定性也不由基础点击检查替代。
 
-[测试夹具目录](../tests/) 中的 `probe_*.py` 提供故意出错、挂起、慢速推进和显式等待的算法，不计入 87 个 unittest 方法。删除夹具会失去对应失败路径的可重复触发方式。
+[测试夹具目录](../tests/) 中的 `probe_*.py` 提供故意出错、挂起、慢速推进和显式等待的算法，不计入 120 个 unittest 方法。删除夹具会失去对应失败路径的可重复触发方式。
 
 | 变更范围 | 建议验证 |
 | --- | --- |
@@ -153,13 +153,14 @@ CUDA 请求允许回退 CPU。因此通过测试不一定表示执行过 GPU 运
 | `test_invalid_config_json_reports_argument_error` | 读取语法错误的 JSON | 退出码为 2，stderr 说明 JSON 错误 |
 | `test_missing_config_file_reports_argument_error` | 读取不存在的配置文件 | 退出码为 2，stderr 说明读取失败 |
 
-### 模板排除：1 个
+### 模板排除与包插件发现：2 个
 
 源码：[test_algorithm_layout.py](../tests/test_algorithm_layout.py)。
 
 | 用例 | 场景或操作 | 预期行为 |
 | --- | --- | --- |
 | `test_template_skipped_before_any_probe_process` | 显式传入模板模块名，以及模拟目录扫描找到模板 | 两类模板在启动检查进程之前被排除，不进入可选或拒绝列表 |
+| `test_package_plugin_is_discovered_once_and_internal_files_skip` | 模拟包目录的 `__init__.py`、`_core.py`、`__main__.py` 与嵌套 `_training` 目录 | 包目录整体作为一个插件返回；下划线文件和 `__main__` 不单独发现；单文件模块照常发现 |
 
 ### 批量步进事件：2 个
 
@@ -197,6 +198,59 @@ CUDA 请求允许回退 CPU。因此通过测试不一定表示执行过 GPU 运
 | `test_default_world_uses_available_plugins_when_preferred_ids_absent` | 目录缺少首选算法 | 默认世界使用可用算法成功创建 |
 | `test_planning_refreshes_changed_tasks_without_rescanning_all_tasks` | 分配前后以及无新分配的后续 tick | 规划只刷新变化任务，旧快照保持不变 |
 | `test_fingerprint_ignores_execution_state` | 推进执行与修改任务定义 | 执行不改变 hash，任务定义变化会改变 hash |
+
+### 路口静态缓存与路线展开：12 个
+
+源码：[test_junction_cache.py](../tests/test_junction_cache.py)。
+
+| 用例 | 场景或操作 | 预期行为 |
+| --- | --- | --- |
+| `test_compressed_graph_shape_matches_default_map` | 默认地图的路口、道路、容量与压缩边 | 节点、边和道路计数一致；每条道路连接两个不同路口，入口格与出口格等于 `Road.entry()/exit()` |
+| `test_all_access_point_pairs_match_reference` | 全部 126 个存取点的有序对 | 缓存距离等于反向 BFS 参考距离，路线长度一致、逐边合法、无重复格点、终点正确 |
+| `test_all_junction_pairs_match_cached_tables` | 全部 64 个路口的有序对 | 距离与路线长度一致；同格点距离 0 且 next hop 为 -1，可达项 next hop 非负 |
+| `test_all_parking_entry_and_exit_pairs_match_reference` | 8 个停车区入口和出口格的全部有序对 | 距离、路线和不可达语义与参考一致 |
+| `test_same_road_forward_and_backward_special_cases` | 同一条路内向前、向后、末格到出口路口 | 向前直接切片，向后经出口路口绕行，距离等于参考 |
+| `test_unsupported_shelf_cells_follow_reference_semantics` | 货架与存取点、货架与自身 | 不可达组合距离为 inf 且 route 抛错；同格点返回空路线 |
+| `test_unreachable_junction_cells_match_reference` | 两个互不连通的路口 | 两个方向距离均为 inf，route 抛 Unreachable |
+| `test_invalid_maps_are_rejected_during_construction` | 5 种合成非法 Map | 构造期 ValueError 覆盖道路缺入口、中途进入、多后继、非路口终止和非连续序列 |
+| `test_cache_is_shared_per_map_and_releases_its_map` | 同一地图重复取缓存、删除地图后查询 | 返回同一实例；弱引用地图可被回收；缓存仍能独立完成查询 |
+| `test_nondefault_small_map_matches_reference` | 较小布局的全部可通行格点对 | 距离和路线与参考一致 |
+| `test_every_traversable_cell_samples_diverse_goals` | 全部可通行格点与抽样目标，正反两向 | 覆盖非存取点道路格的两向查询 |
+| `test_engine_smoke_task_endpoints_match_reference` | 真实引擎推进后的任务端点与车辆起终点 | 缓存语义与参考一致，引擎继续推进 |
+
+### 启发式路径与惩罚语义：12 个
+
+源码：[test_path_cache_heuristic.py](../tests/test_path_cache_heuristic.py)。参考路线来自不传惩罚的公共寻路函数，部分用例附带静态距离启发；路线比较长度和端点，不要求等长最短路的具体顺序一致。另有定向用例通过高估距离和惩罚格点证明启发与惩罚确实改变展开顺序。
+
+| 用例 | 场景或操作 | 预期行为 |
+| --- | --- | --- |
+| `test_access_pairs_keep_shortest_length` | 抽样存取点对，传入静态距离启发 | 路线长度与无启发参考相同，终点正确 |
+| `test_penalties_are_heuristic_and_zero_penalty_scale_keeps_reference` | 占用惩罚 8，`penalties_scale` 取 0 与 1 | 缩放 0 时路线长度等于参考；缩放 1 时不短于参考且终点正确 |
+| `test_heuristic_components_change_expansion_order` | 默认地图上对单一路口高估距离启发并统计回调次数 | 回调确实被调用；路线偏离参考最短路线且仍以目标结尾 |
+| `test_nonzero_penalties_change_route_choice` | 对参考路线中间格点加 1000 惩罚与启发惩罚，缩放取 0 与 1 | 缩放 0 与参考完全一致；缩放 1 路线更长且以目标结尾，证明惩罚只影响排序 |
+| `test_heuristic_penalties_use_separate_scale` | 独立启发惩罚表与 `heuristic_scale` | 缩放 0 与不传该惩罚一致；缩放 1 只延迟展开 |
+| `test_penalty_maps_reject_invalid_values` | 负值、NaN、inf、bool、字符串 | 两张惩罚表均在搜索前报错 |
+| `test_scales_reject_invalid_values` | bool、负数、NaN、inf | 两个缩放参数均拒绝 |
+| `test_distance_validation_rejects_invalid_results` | -1、NaN、-inf、bool、字符串、None 及非可调用对象 | 非法值拒绝；`+inf` 和整数允许 |
+| `test_engine_smoke_with_cache_heuristic` | ShortestPath 加静态距离启发运行完整场景 | 场景完成且世界不变量成立 |
+| `test_shortest_path_passes_static_distance_to_path` | 记录 ShortestPath 对公共寻路的调用 | 每次调用都传入可调用的 `distance` |
+| `test_traffic_aware_passes_static_distance_to_path` | 记录 TrafficAware 的调用 | 每次调用都传入可调用的 `distance` |
+| `test_matrix_routes_passes_static_distance_to_candidate_search` | 记录 MatrixRoutes 候选搜索的调用 | 每轮候选搜索都传入可调用的 `distance` |
+
+### 工具公共逻辑与比较 CLI：8 个
+
+源码：[test_algorithm_bench.py](../tests/test_algorithm_bench.py)。
+
+| 用例 | 场景或操作 | 预期行为 |
+| --- | --- | --- |
+| `test_compact_and_long_pretty_json_are_parsed` | 紧凑 inline JSON 与两空格缩进、超过 260 字符的 inline JSON | 两者都按 JSON 对象解析，不被当作文件名 |
+| `test_option_file_path_is_read` | 文本不是 JSON，给出 JSON 文件路径 | 读取文件并解析为算法参数对象 |
+| `test_invalid_mapping_text_is_rejected` | 非 JSON 文本、JSON 数组、参数值不是对象 | 均抛出 ValueError |
+| `test_output_must_stay_below_project_tmp` | 输出路径设为 `docs/results.json` | argparse 以退出码 2 拒绝 |
+| `test_unknown_algorithm_is_rejected` | 伪造 `Registry.resolve` 抛 `ValueError` | argparse 以退出码 2 拒绝 |
+| `test_options_for_unselected_algorithm_are_rejected` | 参数 JSON 含未选择的算法名 | argparse 以退出码 2 拒绝 |
+| `test_child_error_row_keeps_backend_on_failure` | 构造成功后给 `Engine.run` 抛异常 | 子进程仍返回 0 并打印 error 行，保留 identity 和实际 backend 快照 |
+| `test_trial_row_and_summary_record_actual_backend` | CPU 配置跑 5 tick 的真实 trial，再混入带 backend 的失败行 | 结果行记录 requested、effective 和 fallback_reason；summary 统计所有带 backend 的行，时间统计只取成功行 |
 
 ### 共享配置：2 个
 
@@ -401,7 +455,7 @@ node tests/browser_playback_race.cjs 9222 8770
 
 ### 静态类型检查
 
-项目提供 [Pyright 配置](../pyrightconfig.json)，固定 Python 3.10 和 `standard` 模式，检查入口、框架、算法及测试，并排除 `tmp/` 中的过程副本和工具目录。先在所选开发环境安装 Pyright，然后在项目根目录执行：
+项目提供 [Pyright 配置](../pyrightconfig.json)，固定 Python 3.10 和 `standard` 模式，检查入口、框架、算法、测试和 `tools/`，并排除 `tmp/` 中的过程副本。先在所选开发环境安装 Pyright，然后在项目根目录执行：
 
 ```shell
 pyright --project pyrightconfig.json

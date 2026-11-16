@@ -25,9 +25,9 @@ class ExecutionResult(TypedDict):
     Describe the summary returned by serial and parallel simulation execution.
 
     Attributes:
-        output (str): Path to the saved summary JSON file.
+        output     (str): Path to the saved summary JSON file.
         parameters (dict[str, Any]): Effective algorithm options and adjustments.
-        results (list[dict[str, Any]]): Ordered job records with status and metrics
+        results    (list[dict[str, Any]]): Ordered job records with status and metrics
             or error details, depending on each job's outcome.
     """
 
@@ -124,11 +124,11 @@ def execute(
     seed order, and a batch summary is written after workers finish.
 
     Args:
-        config   (Config): Base scenario used for every trial.
-        ticks    (int): Per-trial tick budget, bounded by config.resources.MAX_RUN_TICKS.
-        registry (Registry): Algorithms already accepted by discovery checks.
-        seeds    (list[int] | None): Trial seeds; None runs config.seed once.
-        workers  (int): Number of spawned workers, bounded by config.resources.MAX_WORKERS; 1 runs serially.
+        config          (Config): Base scenario used for every trial.
+        ticks           (int): Per-trial tick budget, bounded by config.resources.MAX_RUN_TICKS.
+        registry        (Registry): Algorithms already accepted by discovery checks.
+        seeds           (list[int] | None): Trial seeds; None runs config.seed once.
+        workers         (int): Number of spawned workers, bounded by config.resources.MAX_WORKERS; 1 runs serially.
         runtime_timeout (float): Deadline in seconds without completed-tick progress.
 
     Returns:

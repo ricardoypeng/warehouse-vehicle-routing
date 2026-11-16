@@ -24,4 +24,4 @@
 | `traffic_aware` | [TrafficAware](planning/traffic_aware.md) | 持续等待后，按当前格点占用惩罚重新规划 |
 | `matrix_routes` | [MatrixRoutes](planning/matrix_routes.md) | 生成候选路线，按距离和占用特征进行 CPU/CUDA 评分 |
 
-新增算法时，在对应分类下增加独立说明，并在本目录更新入口。源码组织和声明规则见 [公共协议与开发](common.md)。
+新增算法时，在对应分类下增加独立说明，并在本目录更新入口。算法插件可以是单个 Python 文件或文件夹形式，具体发现、声明和校验规则见 [公共协议与开发](common.md)。

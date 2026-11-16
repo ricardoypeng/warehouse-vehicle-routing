@@ -3,6 +3,7 @@
 DEFAULT_TICKS = 100
 DEFAULT_SEEDS = (0, 1, 2)
 TRIAL_TIMEOUT_SECONDS = 600
+COMPARISON_TRIAL_TIMEOUT_SECONDS = 1800
 SCALES = {
     "default": {},
     "medium": {"rows": 6, "columns": 6, "vehicles": 64, "tasks": 1000},

@@ -85,8 +85,8 @@ class HeadlessParameterTests(unittest.TestCase):
             saved["config"]["planning_options"],
             {
                 "candidate_count": 2,
-                "replan_wait": 4,
-                "diversity_penalty": 3.0,
+                "replan_wait": 3,
+                "diversity_penalty": 1.0,
                 "distance_weight": 2.5,
                 "occupancy_weight": 12.0,
             },
@@ -122,8 +122,8 @@ class HeadlessParameterTests(unittest.TestCase):
             self.assertTrue(job["finished"])
             saved = json.loads(Path(job["output"]).read_text(encoding="utf-8"))
             self.assertEqual(saved["config"]["planning_options"]["occupancy_weight"], 7.0)
-            self.assertEqual(saved["config"]["planning_options"]["candidate_count"], 4)
-            self.assertEqual(saved["parameters"]["planning"]["adjustments"][0]["effective"], 4)
+            self.assertEqual(saved["config"]["planning_options"]["candidate_count"], 6)
+            self.assertEqual(saved["parameters"]["planning"]["adjustments"][0]["effective"], 6)
 
     def test_invalid_parameters_use_defaults_and_report_effective_values(self) -> None:
         result = self.cli(
@@ -146,7 +146,7 @@ class HeadlessParameterTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout)
         report = output["parameters"]
-        self.assertEqual(report["planning"]["effective"]["candidate_count"], 4)
+        self.assertEqual(report["planning"]["effective"]["candidate_count"], 6)
         self.assertEqual(report["planning"]["effective"]["distance_weight"], 2.5)
         self.assertEqual(report["planning"]["adjustments"][0]["action"], "default")
         self.assertEqual(report["assignment"]["adjustments"][0]["action"], "ignored")

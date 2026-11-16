@@ -72,16 +72,16 @@ class ProcessEngine:
     Expose snapshots and bounded execution while a worker owns the actual world.
 
     Args:
-        config (Config): Requested scenario, including original parameter inputs.
+        config  (Config): Requested scenario, including original parameter inputs.
         entries (list[dict[str, Any]]): Validated algorithm catalog.
         timeout (float): Maximum seconds without reported completed-tick progress.
             Initialization also has this deadline; long advancing runs remain valid.
 
     Attributes:
-        config (Config): Effective scenario settings received from the worker.
+        config           (Config): Effective scenario settings received from the worker.
         parameter_report (dict[str, Any]): Original parameter-resolution report.
-        world (SimpleNamespace): Latest reported tick, without mutable world entities.
-        task_hash (str): Fingerprint of the original seeded tasks.
+        world            (SimpleNamespace): Latest reported tick, without mutable world entities.
+        task_hash        (str): Fingerprint of the original seeded tasks.
     """
 
     def __init__(self, config: Config, entries: list[dict[str, Any]], timeout: float = WORLD_TIMEOUT_SECONDS) -> None:

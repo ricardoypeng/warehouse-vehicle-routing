@@ -83,7 +83,7 @@ class AlgorithmParameterTests(unittest.TestCase):
             },
         )
         report = self.registry.parameter_report(config)["planning"]
-        self.assertEqual(report["effective"]["candidate_count"], 4)
+        self.assertEqual(report["effective"]["candidate_count"], 6)
         self.assertEqual(report["effective"]["distance_weight"], 2.5)
         self.assertEqual({change["action"] for change in report["adjustments"]}, {"ignored", "default"})
         self.assertEqual(self.registry.engine(config).config.planning_options, report["effective"])
@@ -110,7 +110,7 @@ class AlgorithmParameterTests(unittest.TestCase):
         self.assertEqual(engine.planner.options["candidate_count"], 2)
         self.assertTrue(engine.planner.cache)
         self.assertTrue(all(len(routes) <= 2 for routes in engine.planner.cache.values()))
-        self.assertEqual(engine.config.planning_options["replan_wait"], 4)
+        self.assertEqual(engine.config.planning_options["replan_wait"], 3)
         self.assertEqual(Config.from_dict(engine.config.to_dict()), engine.config)
 
     def test_independent_instances_and_parallel_option_transfer(self) -> None:
@@ -148,7 +148,7 @@ class AlgorithmParameterTests(unittest.TestCase):
         try:
             result = create({"device": "cpu", "planning": "matrix_routes", "planning_options": {"distance_weight": 3}})
             self.assertEqual(result["config"]["planning_options"]["distance_weight"], 3.0)
-            self.assertEqual(result["config"]["planning_options"]["candidate_count"], 4)
+            self.assertEqual(result["config"]["planning_options"]["candidate_count"], 6)
             for config in (
                 {"planning": "matrix_routes", "planning_options": {"candidate_count": 0}},
                 {"planning": "shortest_path", "planning_options": {"distance_weight": 3}},
@@ -160,7 +160,7 @@ class AlgorithmParameterTests(unittest.TestCase):
                     self.assertTrue(any(report["adjustments"] for report in reports.values()))
                     self.assertNotIn("unknown", fallback["config"]["assignment_options"])
                     if config.get("planning") == "matrix_routes":
-                        self.assertEqual(fallback["config"]["planning_options"]["candidate_count"], 4)
+                        self.assertEqual(fallback["config"]["planning_options"]["candidate_count"], 6)
             self.assertEqual(len(server.sessions), 1)
         finally:
             server.shutdown()

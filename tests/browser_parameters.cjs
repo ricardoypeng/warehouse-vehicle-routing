@@ -16,7 +16,7 @@ fs.mkdirSync(out,{recursive:true});
  try{
   await call('Runtime.enable');await call('Page.enable');await wait(`typeof state!=='undefined'&&state&&!busy`);
   await evaluate(`$('planning').value='matrix_routes';$('planning').dispatchEvent(new Event('change'))`);
-  await check('matrix model exposes five default parameter fields',`document.querySelectorAll('#planning-parameters [data-parameter]').length===5&&$('parameter-planning-distance_weight').value==='1'&&$('parameter-planning-occupancy_weight').value==='8'`);
+  await check('matrix model exposes five default parameter fields',`document.querySelectorAll('#planning-parameters [data-parameter]').length===5&&$('parameter-planning-distance_weight').value==='1'&&$('parameter-planning-occupancy_weight').value==='1'`);
   await evaluate(`for(const [name,value] of Object.entries({candidate_count:2,distance_weight:2.5,occupancy_weight:12})){$('parameter-planning-'+name).value=value;$('parameter-planning-'+name).dispatchEvent(new Event('input',{bubbles:true}));}`);
   await check('parameter edits are included in full JSON configuration',`JSON.parse($('config-json').value).planning_options.distance_weight===2.5`);
   let old=await evaluate('identity');await evaluate(`$('create').click()`);await wait(`identity!==${JSON.stringify(old)}&&!busy`);
@@ -28,15 +28,15 @@ fs.mkdirSync(out,{recursive:true});
   await evaluate(`$('reset-parameters').click()`);
   await check('restore defaults changes draft only',`$('parameter-planning-distance_weight').value==='1'&&currentConfig.planning_options.distance_weight===2.5`);
   await evaluate(`$('planning').value='traffic_aware';$('planning').dispatchEvent(new Event('change'))`);
-  await check('traffic-aware exposes its own two configurable fields',`document.querySelectorAll('#planning-parameters [data-parameter]').length===2&&$('parameter-planning-occupancy_penalty').value==='8'`);
+  await check('traffic-aware exposes its own two configurable fields',`document.querySelectorAll('#planning-parameters [data-parameter]').length===2&&$('parameter-planning-occupancy_penalty').value==='24'`);
   const tick=await evaluate('state.tick');await evaluate(`$('step').click()`);await wait(`state.tick>${tick}&&!busy`);
   await check('existing world can still step while unapplied parameter draft differs',`currentConfig.planning==='matrix_routes'&&currentConfig.planning_options.distance_weight===2.5`);
   await evaluate(`$('planning').value='matrix_routes';$('planning').dispatchEvent(new Event('change'))`);
   old=await evaluate('identity');
   await evaluate(`(()=>{const config=configuration();config.planning_options={candidate_count:'wrong',distance_weight:2.5,typo_weight:7};$('config-json').value=JSON.stringify(config);$('apply-json').click();})()`);
   await wait(`identity!==${JSON.stringify(old)}&&!busy`);
-  await check('invalid JSON parameter values fall back while valid values survive',`currentConfig.planning_options.candidate_count===4&&currentConfig.planning_options.distance_weight===2.5&&!('typo_weight' in currentConfig.planning_options)&&$('parameter-planning-candidate_count').value==='4'`);
-  await check('frontend reports ignored names and actual fallback values',`$('parameter-adjustments').textContent.includes('typo_weight')&&$('parameter-adjustments').textContent.includes('已忽略未知参数')&&$('parameter-adjustments').textContent.includes('已使用默认值 4')`);
+  await check('invalid JSON parameter values fall back while valid values survive',`currentConfig.planning_options.candidate_count===6&&currentConfig.planning_options.distance_weight===2.5&&!('typo_weight' in currentConfig.planning_options)&&$('parameter-planning-candidate_count').value==='6'`);
+  await check('frontend reports ignored names and actual fallback values',`$('parameter-adjustments').textContent.includes('typo_weight')&&$('parameter-adjustments').textContent.includes('已忽略未知参数')&&$('parameter-adjustments').textContent.includes('已使用默认值 6')`);
   const {data}=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(path.join(out,'parameter-editor.png'),Buffer.from(data,'base64'));
   fs.writeFileSync(path.join(out,'browser-result.json'),JSON.stringify({passed:true,assertions},null,2));console.log(JSON.stringify({passed:true,assertions}));
  }finally{ws.close();}

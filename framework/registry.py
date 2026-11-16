@@ -24,6 +24,37 @@ from .backend.config import Config
 CATEGORIES = ("assignment", "planning")
 
 
+def _discoverable_modules() -> list[str]:
+    """
+    List algorithm modules and package roots for plugin probing.
+
+    A plugin is either one Python file directly below a category directory or one
+    package directly below a category directory. The package ``__init__.py`` must
+    export ``ALGORITHMS`` and must be able to import every declared factory class.
+    Files inside a package and deeper directories are implementation details and
+    are never probed as separate plugins.
+
+    Returns:
+        list[str]: Discoverable module path names.
+    """
+    root = ROOT / "algorithms"
+    modules = set()
+    for path in sorted(root.rglob("*.py")):
+        relative = path.relative_to(root)
+        parts = relative.parts
+        if any(part.startswith("_") for part in parts[:-1]):
+            continue
+        if len(parts) == 3 and path.name == "__init__.py":
+            modules.add(".".join(("algorithms", *parts[:-1])))
+            continue
+        if len(parts) != 2 or path.name == "__init__.py":
+            continue
+        if path.name.startswith("_") or path.name in ("common.py", "spec.py", "example.py"):
+            continue
+        modules.add(".".join(("algorithms", *parts[:-1], path.stem)))
+    return sorted(modules)
+
+
 def instantiate(
     entry: dict[str, Any], backend: ComputeBackend | None = None, options: dict[str, Any] | None = None
 ) -> Algorithm:
@@ -153,7 +184,8 @@ class Registry:
 
         Args:
             timeout (float): Positive wall-clock timeout in seconds for each module probe.
-            modules (list[str] | None): Explicit module list, or recursive algorithm discovery.
+            modules (list[str] | None): Explicit module list, or discovery of category-level
+                plugin files and package directories.
 
         Returns:
             Registry: Accepted catalog plus diagnostic records for rejected plugins.
@@ -164,11 +196,7 @@ class Registry:
         if timeout <= 0:
             raise ValueError("Probe timeout must be positive")
         if modules is None:
-            modules = [
-                ".".join(p.relative_to(ROOT).with_suffix("").parts)
-                for p in sorted((ROOT / "algorithms").rglob("*.py"))
-                if not p.name.startswith("_") and p.name not in ("common.py", "spec.py", "example.py")
-            ]
+            modules = _discoverable_modules()
         # Reference templates are never imported, including explicit module lists.
         modules = [module for module in modules if module.rsplit(".", 1)[-1] != "example"]
         entries = []
