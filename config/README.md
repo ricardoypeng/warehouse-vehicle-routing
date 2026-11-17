@@ -8,7 +8,7 @@
 | [execution.py](execution.py) | 服务地址和端口、CLI 默认 tick/worker、世界与插件超时、心跳间隔、进程回收等待、插件检查场景 |
 | [scenario.py](scenario.py) | 场景默认值、数值范围、首选算法和默认计算设备 |
 | [frontend.py](frontend.py) | 列表分页、画布缩放、请求频率、每次推进数量、活动记录保留与显示数量、请求超时和无移动提示阈值 |
-| [benchmark.py](benchmark.py) | 性能实验规模、默认 tick/seed 和独立试验超时 |
+| [benchmark.py](benchmark.py) | 性能实验规模、默认 tick/seed、基准与比较工具的单次试验超时 |
 
 ## 修改内存上限
 

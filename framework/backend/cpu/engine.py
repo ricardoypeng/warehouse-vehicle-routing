@@ -104,11 +104,11 @@ class Engine:
         instances and mutable statistics must belong to this run.
 
         Args:
-            config    (Config): Validated scenario and execution settings.
-            allocator (TaskAssignmentAlgorithm): Plugin proposing task assignments.
-            planner   (PlanningAlgorithm): Plugin proposing replacement movement plans.
-            backend   (ComputeBackend | None): Shared scorer, or one selected from config.device.
-            map       (Map | None): Optional canonical layout; otherwise built from config.
+            config           (Config): Validated scenario and execution settings.
+            allocator        (TaskAssignmentAlgorithm): Plugin proposing task assignments.
+            planner          (PlanningAlgorithm): Plugin proposing replacement movement plans.
+            backend          (ComputeBackend | None): Shared scorer, or one selected from config.device.
+            map              (Map | None): Optional canonical layout; otherwise built from config.
             parameter_report (dict[str, Any] | None): Original parameter-resolution
                 report supplied by Registry. None means this engine was constructed
                 directly without registry resolution; it does not mean empty options.
@@ -408,7 +408,7 @@ class Engine:
         events, so consumers do not replay events from an earlier call.
 
         Args:
-            count (int): Requested tick count, bounded by config.resources.MAX_STEP_TICKS.
+            count    (int): Requested tick count, bounded by config.resources.MAX_STEP_TICKS.
             progress (Callable[[int], None] | None): Optional completed-tick callback
                 used by the process supervisor without serializing intermediate states.
 
@@ -628,7 +628,7 @@ class Engine:
         Run headless ticks without creating intermediate snapshots.
 
         Args:
-            ticks (int): Tick budget, bounded by config.resources.MAX_RUN_TICKS.
+            ticks    (int): Tick budget, bounded by config.resources.MAX_RUN_TICKS.
             progress (Callable[[int], None] | None): Optional completed-tick callback
                 used to report progress to a supervising process.
 

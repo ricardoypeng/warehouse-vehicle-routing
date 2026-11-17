@@ -318,6 +318,9 @@ class ComputeTests(unittest.TestCase):
             def info(self) -> BackendInfo:
                 return BackendInfo(requested=self.requested, effective=self.effective, fallback_reason=None)
 
+            def tensor_entry(self) -> None:
+                return None
+
         independent = IndependentBackend()
         backend: ComputeBackend = independent
         e = Engine(
@@ -339,6 +342,26 @@ class ComputeTests(unittest.TestCase):
         if optional.effective == "cpu":
             self.assertIsNotNone(optional.fallback_reason)
 
+    def test_cpu_backend_exposes_no_tensor_entry(self) -> None:
+        backend = CPUBackend()
+        self.assertIsNone(backend.tensor_entry())
+
+    def test_cuda_backend_hands_torch_only_when_effective(self) -> None:
+        from framework.backend.cuda.compute import CUDABackend
+        from unittest.mock import Mock
+
+        backend = object.__new__(CUDABackend)
+        backend.requested = "cuda"
+        backend.effective = "cuda"
+        backend.torch = Mock()
+        entry = backend.tensor_entry()
+        self.assertIsNotNone(entry)
+        assert entry is not None
+        self.assertIs(entry.module, backend.torch)
+        self.assertEqual(entry.device, "cuda")
+        backend.effective = "cpu"
+        self.assertIsNone(backend.tensor_entry())
+
     def test_cuda_runtime_error_has_cpu_replacement(self) -> None:
         from framework.backend.cuda.compute import CUDABackend
         from unittest.mock import Mock
@@ -355,22 +378,25 @@ class ComputeTests(unittest.TestCase):
 
     def test_matrix_routes_cpu_optional_cuda_rollout_parity(self) -> None:
         states = []
-        for device in ["cpu", "cuda"]:
-            backend = make_backend(device)
-            e = Engine(Config(vehicles=4, tasks=12), FIFO(backend=backend), MatrixRoutes(backend=backend), backend)
-            trace = []
-            for _ in range(1200):
-                if e.finished:
-                    break
-                e._step_once()
-                trace.append(
-                    tuple(
-                        (v.cell.id if v.cell else None, tuple(c.id for c in v.plan.steps))
-                        for v in e.world.vehicles.values()
+        with patch("algorithms.planning.matrix_routes._planner.TENSOR_WORK_THRESHOLD", 0):
+            for device in ["cpu", "cuda"]:
+                backend = make_backend(device)
+                planner = MatrixRoutes(backend=backend)
+                e = Engine(Config(vehicles=4, tasks=12), FIFO(backend=backend), planner, backend)
+                trace = []
+                for _ in range(1200):
+                    if e.finished:
+                        break
+                    e._step_once()
+                    trace.append(
+                        tuple(
+                            (v.cell.id if v.cell else None, tuple(c.id for c in v.plan.steps))
+                            for v in e.world.vehicles.values()
+                        )
                     )
-                )
-            self.assertTrue(e.finished)
-            states.append(trace)
+                self.assertTrue(e.finished)
+                self.assertIsNone(planner.routing_fallback_reason)
+                states.append(trace)
         self.assertEqual(states[0], states[1])
 
 

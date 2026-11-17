@@ -61,8 +61,8 @@ class Server(ThreadingHTTPServer):
         Bind the HTTP listener and initialize the shared session registry.
 
         Args:
-            address  (tuple[str, int]): Bind host and port; port 0 requests a free port.
-            registry (Registry): Validated selectable algorithm catalog.
+            address         (tuple[str, int]): Bind host and port; port 0 requests a free port.
+            registry        (Registry): Validated selectable algorithm catalog.
             runtime_timeout (float): Maximum seconds without completed-tick progress.
         """
         self.runtime_timeout = runtime_timeout

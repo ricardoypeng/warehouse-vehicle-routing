@@ -19,7 +19,7 @@
 
 每个 HTTP 或命令行世界由独立进程执行。默认连续 30 秒没有完成 tick 的进展时终止该进程；`serve`、`run`、`batch` 可通过 `--runtime-timeout` 设置秒数。长运行会定期报告进展，持续推进时不受总耗时限制。HTTP 失败世界可查看最后一次完整状态并应用配置重置。
 
-源码兼容 Python 3.10+。CPU 模式只使用标准库，不要求 PyTorch。CUDA 使用环境中已有的 CUDA 版 PyTorch；缺少依赖、驱动不可用或计算失败时，自动回退 CPU，并在状态中报告原因。默认自动检测计算后端，CUDA 不可用时使用 CPU；也可显式选择 CPU。当前 CUDA 加速范围是路线评分，仿真状态推进仍在 CPU。
+源码兼容 Python 3.10+。CPU 模式只使用标准库，不要求 PyTorch。CUDA 使用环境中已有的 CUDA 版 PyTorch；缺少依赖、驱动不可用或计算失败时，自动回退 CPU，并在状态中报告原因。默认自动检测计算后端，CUDA 不可用时使用 CPU；也可显式选择 CPU。当前 CUDA 加速范围是矩阵候选生成与路线评分（算法按需向后端领取 tensor 入口），仿真状态推进仍在 CPU。
 
 资源预算和运行限制统一在 [配置目录](config/README.md) 修改，重启服务或重新执行命令后生效。
 
@@ -35,7 +35,7 @@ python -B main.py algorithms
 python -B main.py serve --port 8770
 ```
 
-需要 NVIDIA CUDA 路线评分时，在同一环境安装 [CUDA requirements](requirements-cuda.txt)：
+需要 NVIDIA CUDA 矩阵候选生成与路线评分时，在同一环境安装 [CUDA requirements](requirements-cuda.txt)：
 
 ```shell
 python -m pip install -r requirements-cuda.txt
@@ -64,6 +64,8 @@ python -B main.py self-test
 
 GPU 并行任务各自创建 CUDA 上下文；单卡吞吐是否改善需要实测，不能把 CPU 进程数直接当成 GPU 加速倍数。
 
+`run` 使用配置中的 seed，显式 `--seed` 覆盖它。`batch` 未传 `--seeds` 时使用同样的单个 seed；显式 `--seeds 0 1 2` 才执行对应的多个试验。单 seed 的 batch 仍输出到 batch 目录。
+
 ## 地图与交互
 
 - 货架按组绘制并显示编号，上下边缘显示可点选的存取点。
@@ -85,9 +87,27 @@ GPU 并行任务各自创建 CUDA 上下文；单卡吞吐是否改善需要实�
 - [HTTP API 和并行调用](docs/api.md)
 - [测试用例、运行方式与覆盖边界](docs/testing.md)
 
-当前内置两种分配算法（FIFO、道路距离 Greedy）和三种规划算法（最短路、Traffic-aware、CPU/CUDA 矩阵评分）。其他算法可通过插件接口扩展，具体步骤见上方算法文档。
+当前内置两种分配算法（FIFO、道路距离 Greedy）和三种规划算法（最短路、Traffic-aware、CPU/CUDA 矩阵候选与全车队移动集合诊断）。其他算法可通过插件接口扩展，具体步骤见上方算法文档。
 
-`run` 使用配置中的 seed，显式 `--seed` 覆盖它。`batch` 未传 `--seeds` 时使用同样的单个 seed；显式 `--seeds 0 1 2` 才执行对应的多个试验。单 seed 的 batch 仍输出到 batch 目录。
+### 基准与比较工具
+
+使用 [规划器比较入口](tools/compare_planners.py) 可在相同地图、任务和 seed 下比较不同车数。示例显式指定 `road_greedy`，省略 `--assignment` 时该工具会同时比较 `fifo` 和 `road_greedy`：
+
+```shell
+python -B tools/compare_planners.py --planning shortest_path traffic_aware matrix_routes --assignment road_greedy --vehicles 8 20 30 40 --tasks 1000 --seeds 0 1 2 --ticks 3000 --output tmp/comparison/results.json
+```
+
+需要比较标准规划算法的通过率、总耗时、仿真耗时、拥堵率和利用率时使用 [算法对比工具](tools/compare_algorithms.py)：
+
+```shell
+python -B tools/compare_algorithms.py --planning shortest_path traffic_aware matrix_routes --vehicles 20 30 40 --seeds 0 1 2 --reps 3 --workers 8 --output tmp/analysis/standard-algorithms.json
+```
+
+需要测量规划器的车数上限时使用 [车数极限工具](tools/fleet_limits.py)：
+
+```shell
+python -B tools/fleet_limits.py --planning shortest_path traffic_aware matrix_routes --vehicles 40 50 60 70 80 --seeds 0 1 2 --ticks 4000 --output tmp/analysis/fleet-limits.json
+```
 
 运行时的 `tmp/runtime/<pid>/` 为进程私有临时目录，当前保留供故障排查；程序不会按 PID 猜测并删除其他进程目录。确认相关服务、作业与子进程已全部退出后，可以手动清理这些运行时目录。`tmp/cache/` 保留可复用计算缓存，`tmp/runs/` 保留运行结果，清理由使用者决定。服务启动信息和未捕获异常输出到终端，HTTP 访问日志不落盘。
 

@@ -6,7 +6,7 @@
 
 ## 文件组织与发现
 
-在 [algorithms](../../algorithms/) 下按分类新增 Python 模块，模块导出 ALGORITHMS 列表。名为 `example.py` 的参考模板在扫描时被跳过，不导入、不执行自检、不加入可选列表；即使显式传入该模块名也会跳过。启动递归发现非下划线开头的模块，在 spawn 子进程中导入和试调用；同模块默认 10 秒预算。异常、无返回、非法计划、无进展和超时模块不会成为可选项，同一 category/id 冲突双方均被排除。
+在 [algorithms](../../algorithms/) 下按分类新增算法插件。插件可以是单个 Python 文件，也可以是包含 `__init__.py` 的文件夹，入口导出 `ALGORITHMS` 列表。文件夹整体作为一个插件探测，内部实现文件和子目录以下划线开头，避免被单独探测；`ALGORITHMS` 中声明的 factory 类必须能从包模块导入，例如在 `__init__.py` 中从实现模块重导出。名为 `example.py` 的参考模板在扫描时被跳过，不导入、不执行自检、不加入可选列表；即使显式传入该模块名也会跳过。启动时只探测分类目录下与算法文件并列的 Python 文件和文件夹插件，不递归更深层；每个候选模块在 spawn 子进程中导入和试调用，同模块默认 10 秒预算。异常、无返回、非法计划、无进展和超时模块不会成为可选项，同一 category/id 冲突双方均被排除。
 
 当前执行分类为 assignment 和 planning。新增业务分类还需要定义对应内核调用点，不能仅靠目录名称自动获得执行语义。
 
@@ -58,7 +58,7 @@ ALGORITHMS = [AlgorithmSpec('planning', 'my_planner', '我的规划', 'MyPlanner
 
 返回新计划替换剩余计划；返回空计划清空；不返回某辆车则保留。计划是纯数据，小车只按队首执行。算法可通过快照读取等待时间、现有计划、占用和 last_results 来决定是否改计划。
 
-算法可以维护多车共享预约表和学习模型；这些属于算法实例。算法不能修改真实位置、占用和任务归属。后端计算使用 self.backend，保证 CPU / CUDA 选择不会改变插件接口。
+算法可以维护多车共享预约表和学习模型；这些属于算法实例。算法不能修改真实位置、占用和任务归属。后端计算使用 self.backend，保证 CPU / CUDA 选择不会改变插件接口。需要张量计算的算法在首次使用时调用 `self.backend.tensor_entry()` 领取 tensor runtime；框架只分发入口和设备，路由、回退与算法状态仍由算法负责。
 
 ## 检查
 
@@ -85,11 +85,11 @@ python -B main.py self-test
 {
   "planning": "matrix_routes",
   "planning_options": {
-    "candidate_count": 4,
-    "replan_wait": 4,
-    "diversity_penalty": 3.0,
+    "candidate_count": 6,
+    "replan_wait": 3,
+    "diversity_penalty": 1.0,
     "distance_weight": 1.0,
-    "occupancy_weight": 8.0
+    "occupancy_weight": 0.25
   }
 }
 ```
@@ -127,4 +127,4 @@ CLI 输出的 `parameters` 按类别包含 `algorithm`、完整的 `effective` �
 
 允许部分路线、同格点等待及合法的重复格点，不要求每次提交的末项已经到达目标。算法负责推进任务；内核的合法性检查不保证任意插件最终完成任务。持续绕圈可以保持有移动、tick 心跳正常，但任务不完成。`stalled_ticks` 衡量无移动，进程超时衡量没有完成 tick，均不等同于任务进展；run/batch 的 tick 预算限制本次执行，HTTP 由客户端决定继续推进多少次。
 
-公共 `path` 只接受有限非负惩罚值，错误值在搜索前拒绝；不可达终点显式报错。算法不得用负权边调用 Dijkstra。
+公共 `path` 的 \(g\) 只累计进入的格点数，惩罚只进入启发估计 \(h\)。它只接受有限非负惩罚值，并对 `penalties_scale`、`heuristic_scale` 和可选 `distance` 回调的返回值做有限非负校验，错误值在搜索前或使用前拒绝。`distance` 须返回非负步数，目标从查询格点不可达时返回 `+inf`；不可达终点显式报错。可选的 `heuristic_penalties` 与 `penalties` 分开累加，同样只进 \(h\)，当前内置规划器不使用，留给插件或消融实验。惩罚非零时返回启发偏置下的可行路线，不保证步数最短，也不保证惩罚加权最优；`distance` 必须可采纳（不得高估剩余步数），否则同样不保证最短。

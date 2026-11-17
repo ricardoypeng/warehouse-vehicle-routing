@@ -14,19 +14,19 @@ class Config:
     Store validated scenario settings shared by CLI, API and worker processes.
 
     Attributes:
-        rows              (int): Number of shelf rows.
-        columns           (int): Number of shelf columns.
-        shelf_length      (int): Shelf width in grid cells.
-        shelf_depth       (int): Shelf height in grid cells.
-        vehicles          (int): Number of vehicles starting in NW parking.
-        tasks             (int): Number of generated pickup/dropoff tasks.
-        seed              (int): Local random seed used for task generation.
-        release_interval  (int): Tick spacing between successive task releases.
-        service_ticks     (int): Duration of each pickup and dropoff service.
-        dispatch_interval (int): Minimum tick spacing between departures from one parking area.
-        assignment        (str): Validated assignment plugin identifier.
-        planning          (str): Validated planning plugin identifier.
-        device            (str): Requested scoring backend: cpu, cuda or auto.
+        rows               (int): Number of shelf rows.
+        columns            (int): Number of shelf columns.
+        shelf_length       (int): Shelf width in grid cells.
+        shelf_depth        (int): Shelf height in grid cells.
+        vehicles           (int): Number of vehicles starting in NW parking.
+        tasks              (int): Number of generated pickup/dropoff tasks.
+        seed               (int): Local random seed used for task generation.
+        release_interval   (int): Tick spacing between successive task releases.
+        service_ticks      (int): Duration of each pickup and dropoff service.
+        dispatch_interval  (int): Minimum tick spacing between departures from one parking area.
+        assignment         (str): Validated assignment plugin identifier.
+        planning           (str): Validated planning plugin identifier.
+        device             (str): Requested scoring backend: cpu, cuda or auto.
         assignment_options (dict[str, Any]): Parameter values for the selected task allocator.
         planning_options   (dict[str, Any]): Parameter values for the selected route planner.
     """

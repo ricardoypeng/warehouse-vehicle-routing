@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from importlib import import_module
 
+from ..contracts import TensorEntry
 from ..cpu.compute import CPUBackend
 
 
@@ -24,10 +25,10 @@ class CUDABackend(CPUBackend):
         self.requested = requested
         try:
             torch = import_module("torch")
+            self.torch = torch
 
             if not torch.cuda.is_available():
                 raise RuntimeError("CUDA is unavailable")
-            self.torch = torch
             # Allocate and execute now; a driver/allocation failure must fall back.
             torch.ones(1, device="cuda").sum().item()
             self.effective = "cuda"
@@ -62,3 +63,18 @@ class CUDABackend(CPUBackend):
             self.effective = "cpu"
             self.fallback_reason = f"{type(exc).__name__}: {exc}"
             return super().score(features, weights)
+
+    def tensor_entry(self) -> TensorEntry | None:
+        """
+        Return the torch runtime only when this backend actually runs on CUDA.
+
+        A fallback to CPU reports no entry so algorithms use their CPU reference
+        implementation instead of silently running torch on the wrong device.
+
+        Returns:
+            TensorEntry | None: Torch module and ``cuda`` device, or None.
+        """
+        torch = getattr(self, "torch", None)
+        if torch is None or self.effective != "cuda":
+            return None
+        return TensorEntry(torch, "cuda")

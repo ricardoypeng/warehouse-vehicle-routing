@@ -10,7 +10,8 @@ V = TypeVar("V")
 
 
 class ByteLRU(MutableMapping[K, V], Generic[K, V]):
-    """Retain values within a measured byte budget and evict least-recently used keys.
+    """
+    Retain values within a measured byte budget and evict least-recently used keys.
 
     The caller measures key/value storage it owns. This cache additionally charges
     entry wrappers, stored size integers and the actual OrderedDict index growth.
@@ -24,7 +25,7 @@ class ByteLRU(MutableMapping[K, V], Generic[K, V]):
 
         Args:
             max_bytes (int): Positive retained-byte budget, excluding fixed empty storage.
-            size_of (Callable[[K, V], int]): Owned key/value bytes; shared entities may be excluded.
+            size_of   (Callable[[K, V], int]): Owned key/value bytes; shared entities may be excluded.
 
         Raises:
             ValueError: If the byte budget is not a positive integer.

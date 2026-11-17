@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from ..contracts import BackendInfo
+from ..contracts import BackendInfo, TensorEntry
 
 
 class CPUBackend:
@@ -51,3 +51,7 @@ class CPUBackend:
     def info(self) -> BackendInfo:
         """Return the requested device, effective device and CPU fallback reason."""
         return BackendInfo(requested=self.requested, effective=self.effective, fallback_reason=self.fallback_reason)
+
+    def tensor_entry(self) -> TensorEntry | None:
+        """Report that the pure CPU backend has no device tensor runtime."""
+        return None

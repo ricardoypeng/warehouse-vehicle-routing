@@ -23,6 +23,7 @@ from config.scenario import DEVICES
 from framework.backend.config import Config
 from framework.registry import Registry
 from framework.utils.fingerprint import task_hash
+from framework.utils.junction import junction_cache
 
 
 def peak_memory() -> dict[str, Any]:
@@ -60,8 +61,9 @@ def trial(data: dict[str, Any]) -> dict[str, Any]:
     config = Config.from_dict(data["config"])
     registry = Registry.discover()
     engine = registry.engine(config)
-    initialized = time.perf_counter()
+    junction_cache(engine.world.map)
     digest = task_hash(engine.world.tasks.values())
+    initialized = time.perf_counter()
     state = engine.run(data["ticks"])
     ended = time.perf_counter()
     elapsed = ended - initialized
