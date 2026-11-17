@@ -16,7 +16,7 @@ fs.mkdirSync(out,{recursive:true});
  try{
   await call('Runtime.enable');await call('Page.enable');await wait(`typeof state!=='undefined'&&state&&!busy`);
   await evaluate(`$('planning').value='matrix_routes';$('planning').dispatchEvent(new Event('change'))`);
-  await check('matrix model exposes five default parameter fields',`document.querySelectorAll('#planning-parameters [data-parameter]').length===5&&$('parameter-planning-distance_weight').value==='1'&&$('parameter-planning-occupancy_weight').value==='1'`);
+  await check('matrix model exposes five default parameter fields',`document.querySelectorAll('#planning-parameters [data-parameter]').length===5&&$('parameter-planning-distance_weight').value==='1'&&$('parameter-planning-occupancy_weight').value==='0.25'`);
   await evaluate(`for(const [name,value] of Object.entries({candidate_count:2,distance_weight:2.5,occupancy_weight:12})){$('parameter-planning-'+name).value=value;$('parameter-planning-'+name).dispatchEvent(new Event('input',{bubbles:true}));}`);
   await check('parameter edits are included in full JSON configuration',`JSON.parse($('config-json').value).planning_options.distance_weight===2.5`);
   let old=await evaluate('identity');await evaluate(`$('create').click()`);await wait(`identity!==${JSON.stringify(old)}&&!busy`);

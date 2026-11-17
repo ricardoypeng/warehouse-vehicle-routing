@@ -19,7 +19,7 @@
 
 每个 HTTP 或命令行世界由独立进程执行。默认连续 30 秒没有完成 tick 的进展时终止该进程；`serve`、`run`、`batch` 可通过 `--runtime-timeout` 设置秒数。长运行会定期报告进展，持续推进时不受总耗时限制。HTTP 失败世界可查看最后一次完整状态并应用配置重置。
 
-源码兼容 Python 3.10+。CPU 模式只使用标准库，不要求 PyTorch。CUDA 使用环境中已有的 CUDA 版 PyTorch；缺少依赖、驱动不可用或计算失败时，自动回退 CPU，并在状态中报告原因。默认自动检测计算后端，CUDA 不可用时使用 CPU；也可显式选择 CPU。当前 CUDA 加速范围是路线评分，仿真状态推进仍在 CPU。
+源码兼容 Python 3.10+。CPU 模式只使用标准库，不要求 PyTorch。CUDA 使用环境中已有的 CUDA 版 PyTorch；缺少依赖、驱动不可用或计算失败时，自动回退 CPU，并在状态中报告原因。默认自动检测计算后端，CUDA 不可用时使用 CPU；也可显式选择 CPU。当前 CUDA 加速范围是矩阵候选生成与路线评分（算法按需向后端领取 tensor 入口），仿真状态推进仍在 CPU。
 
 资源预算和运行限制统一在 [配置目录](config/README.md) 修改，重启服务或重新执行命令后生效。
 
@@ -35,7 +35,7 @@ python -B main.py algorithms
 python -B main.py serve --port 8770
 ```
 
-需要 NVIDIA CUDA 路线评分时，在同一环境安装 [CUDA requirements](requirements-cuda.txt)：
+需要 NVIDIA CUDA 矩阵候选生成与路线评分时，在同一环境安装 [CUDA requirements](requirements-cuda.txt)：
 
 ```shell
 python -m pip install -r requirements-cuda.txt
@@ -87,7 +87,7 @@ GPU 并行任务各自创建 CUDA 上下文；单卡吞吐是否改善需要实�
 - [HTTP API 和并行调用](docs/api.md)
 - [测试用例、运行方式与覆盖边界](docs/testing.md)
 
-当前内置两种分配算法（FIFO、道路距离 Greedy）和三种规划算法（最短路、Traffic-aware、CPU/CUDA 矩阵评分）。其他算法可通过插件接口扩展，具体步骤见上方算法文档。
+当前内置两种分配算法（FIFO、道路距离 Greedy）和三种规划算法（最短路、Traffic-aware、CPU/CUDA 矩阵候选与全车队移动集合诊断）。其他算法可通过插件接口扩展，具体步骤见上方算法文档。
 
 ### 基准与比较工具
 

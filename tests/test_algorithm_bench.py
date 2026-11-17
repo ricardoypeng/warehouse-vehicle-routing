@@ -22,7 +22,7 @@ OPTIONS = {
         "replan_wait": 3,
         "diversity_penalty": 1.0,
         "distance_weight": 1.0,
-        "occupancy_weight": 1.0,
+        "occupancy_weight": 0.25,
     },
     "traffic_aware": {"replan_wait": 1, "occupancy_penalty": 24.0},
 }

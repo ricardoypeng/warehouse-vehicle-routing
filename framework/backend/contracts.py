@@ -16,9 +16,24 @@ class BackendInfo(TypedDict):
     fallback_reason: str | None
 
 
+@dataclass(frozen=True)
+class TensorEntry:
+    """
+    Hand an optional tensor runtime to algorithms that request device compute.
+
+    Attributes:
+        module (Any): Tensor library module, normally torch. The framework does not
+            import TensorFlow-like alternatives and only forwards the object.
+        device (str): Device label the runtime was initialized for, normally ``cuda``.
+    """
+
+    module: Any
+    device: str
+
+
 class ComputeBackend(Protocol):
     """
-    Define scoring operations independently of their CPU or CUDA implementation.
+    Define scoring and device-entry operations independently of their CPU or CUDA implementation.
 
     Attributes:
         requested       (str): Device requested by the caller.
@@ -62,6 +77,18 @@ class ComputeBackend(Protocol):
 
     def info(self) -> BackendInfo:
         """Return requested and effective device names plus the fallback reason."""
+        ...
+
+    def tensor_entry(self) -> TensorEntry | None:
+        """
+        Return the tensor runtime this backend can hand to an algorithm, if any.
+
+        The framework only distributes the entry. Algorithms decide when to claim it
+        and own the computation, fallback and reporting that follow.
+
+        Returns:
+            TensorEntry | None: Runtime and device, or None when no device runtime exists.
+        """
         ...
 
 

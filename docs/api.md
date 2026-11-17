@@ -24,7 +24,7 @@
     "assignment": "road_greedy",
     "planning": "matrix_routes",
     "device": "auto",
-    "planning_options": {"distance_weight": 1.0, "occupancy_weight": 1.0},
+    "planning_options": {"distance_weight": 1.0, "occupancy_weight": 0.25},
     "vehicles": 8,
     "tasks": 24,
     "seed": 0

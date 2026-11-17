@@ -6,11 +6,9 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-import algorithms.planning.matrix_routes as matrix_module
 import algorithms.planning.standard as standard_module
 
 from algorithms.assignment.standard import FIFO
-from algorithms.planning.matrix_routes import MatrixRoutes
 from algorithms.planning.standard import ShortestPath, TrafficAware
 from framework.backend.config import Config
 from framework.backend.cpu.engine import Engine
@@ -219,21 +217,6 @@ class PlannerHeuristicTests(unittest.TestCase):
             engine.step(20)
         self.assertTrue(captured)
         self.assertTrue(all(callable(call.get("distance")) for call in captured))
-
-    def test_matrix_routes_passes_static_distance_to_candidate_search(self) -> None:
-        captured = []
-        original = matrix_module.path
-
-        def record(*args, **kwargs):
-            captured.append(kwargs)
-            return original(*args, **kwargs)
-
-        with patch.object(matrix_module, "path", record):
-            engine = Engine(Config(vehicles=2, tasks=4, device="cpu"), FIFO(), MatrixRoutes())
-            engine.step(30)
-        self.assertTrue(captured)
-        self.assertTrue(all(callable(call.get("distance")) for call in captured))
-
 
 if __name__ == "__main__":
     unittest.main()

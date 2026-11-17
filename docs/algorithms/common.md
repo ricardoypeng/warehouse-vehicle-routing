@@ -58,7 +58,7 @@ ALGORITHMS = [AlgorithmSpec('planning', 'my_planner', '我的规划', 'MyPlanner
 
 返回新计划替换剩余计划；返回空计划清空；不返回某辆车则保留。计划是纯数据，小车只按队首执行。算法可通过快照读取等待时间、现有计划、占用和 last_results 来决定是否改计划。
 
-算法可以维护多车共享预约表和学习模型；这些属于算法实例。算法不能修改真实位置、占用和任务归属。后端计算使用 self.backend，保证 CPU / CUDA 选择不会改变插件接口。
+算法可以维护多车共享预约表和学习模型；这些属于算法实例。算法不能修改真实位置、占用和任务归属。后端计算使用 self.backend，保证 CPU / CUDA 选择不会改变插件接口。需要张量计算的算法在首次使用时调用 `self.backend.tensor_entry()` 领取 tensor runtime；框架只分发入口和设备，路由、回退与算法状态仍由算法负责。
 
 ## 检查
 
@@ -89,7 +89,7 @@ python -B main.py self-test
     "replan_wait": 3,
     "diversity_penalty": 1.0,
     "distance_weight": 1.0,
-    "occupancy_weight": 1.0
+    "occupancy_weight": 0.25
   }
 }
 ```

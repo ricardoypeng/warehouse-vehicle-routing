@@ -87,7 +87,7 @@ python -m pip install -r requirements-cuda.txt
 python -c "import torch; print(torch.__version__, torch.version.cuda, torch.backends.cudnn.version(), torch.cuda.is_available())"
 ```
 
-可选依赖由 [CUDA requirements](../requirements-cuda.txt) 固定 PyTorch wheel 版本。安装后核对版本与 CUDA 可用性，并检查运行结果中的 `backend.effective`。CUDA 路线评分与 CPU 结果一致的检查不能直接推出整体仿真更快；需要在相同配置、seed 和 task hash 下比较实际 wall time。
+可选依赖由 [CUDA requirements](../requirements-cuda.txt) 固定 PyTorch wheel 版本。安装后核对版本与 CUDA 可用性，并检查运行结果中的 `backend.effective`。CUDA 矩阵候选生成与路线评分同 CPU 结果一致的检查不能直接推出整体仿真更快；需要在相同配置、seed 和 task hash 下比较实际 wall time。
 
 ## 已执行的 CPU 测量
 
