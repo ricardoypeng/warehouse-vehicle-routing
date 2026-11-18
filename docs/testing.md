@@ -266,6 +266,17 @@ CUDA 请求允许回退 CPU。因此通过测试不一定表示执行过 GPU 运
 | `test_diagnosis_matches_kernel_resolution_when_masking_rescues_cycle` | 真实地图的有向四格环 + 一个高等待值的外部入口车辆；先诊断，再按掩码后的请求调用内核 `resolve_moves()` | 诊断集合包含环上四车；掩码后内核实际移动集合与之相等；不掩码时内核放行的车辆更少（外部车辆抢走环上格点导致级联冻结） |
 | `test_forty_vehicle_deadlock_regression_finishes` | 默认地图 40 车、1000 任务、seed 0、3000 tick 预算 | 完成后全部 1000 个任务（同场景加入诊断前只完成 164 个，仅作对照，不在断言内） |
 
+### Challenger：4 个
+
+源码：[test_challenger.py](../tests/test_challenger.py)。算法说明见 [Challenger](algorithms/planning/challenger.md)。
+
+| 用例 | 场景或操作 | 预期行为 |
+| --- | --- | --- |
+| `test_parameters_extend_matrix_routes` | 检查参数声明并传入部分自定义参数 | 前五个参数与 MatrixRoutes 相同；自定义值生效，未传入的参数使用默认值 |
+| `test_small_scenario_finishes` | 1×1 小地图，2 车 4 任务 | 300 tick 内完成，世界不变量成立 |
+| `test_large_fleet_finishes_without_deadlock` | 默认地图，100 车 400 任务 | 4000 tick 内完成且全部回库，世界不变量成立 |
+| `test_exit_clearing_speeds_up_dispatch` | 同一 100 车场景，分别开启和关闭 `clear_exit` | 开启时所有车辆出库完成的 tick 更早 |
+
 ### 工具公共逻辑与比较 CLI：8 个
 
 源码：[test_algorithm_bench.py](../tests/test_algorithm_bench.py)。
