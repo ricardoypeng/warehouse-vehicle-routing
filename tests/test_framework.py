@@ -26,6 +26,7 @@ from algorithms.assignment.standard import FIFO
 from algorithms.common import distances_to
 from algorithms.planning.standard import ShortestPath, TrafficAware
 from algorithms.planning.matrix_routes import MatrixRoutes
+from algorithms.planning.challenger import Challenger
 from framework.registry import Registry
 from framework.runner import execute
 from framework.server import MAX_SESSIONS, Server, Session
@@ -377,27 +378,29 @@ class ComputeTests(unittest.TestCase):
         self.assertIn("simulated device failure", backend.fallback_reason)
 
     def test_matrix_routes_cpu_optional_cuda_rollout_parity(self) -> None:
-        states = []
-        with patch("algorithms.planning.matrix_routes._planner.TENSOR_WORK_THRESHOLD", 0):
-            for device in ["cpu", "cuda"]:
-                backend = make_backend(device)
-                planner = MatrixRoutes(backend=backend)
-                e = Engine(Config(vehicles=4, tasks=12), FIFO(backend=backend), planner, backend)
-                trace = []
-                for _ in range(1200):
-                    if e.finished:
-                        break
-                    e._step_once()
-                    trace.append(
-                        tuple(
-                            (v.cell.id if v.cell else None, tuple(c.id for c in v.plan.steps))
-                            for v in e.world.vehicles.values()
-                        )
-                    )
-                self.assertTrue(e.finished)
-                self.assertIsNone(planner.routing_fallback_reason)
-                states.append(trace)
-        self.assertEqual(states[0], states[1])
+        for factory in (MatrixRoutes, Challenger):
+            with self.subTest(planner=factory.__name__):
+                states = []
+                with patch("algorithms.planning.matrix_routes._planner.TENSOR_WORK_THRESHOLD", 0):
+                    for device in ["cpu", "cuda"]:
+                        backend = make_backend(device)
+                        planner = factory(backend=backend)
+                        e = Engine(Config(vehicles=4, tasks=12), FIFO(backend=backend), planner, backend)
+                        trace = []
+                        for _ in range(1200):
+                            if e.finished:
+                                break
+                            e._step_once()
+                            trace.append(
+                                tuple(
+                                    (v.cell.id if v.cell else None, tuple(c.id for c in v.plan.steps))
+                                    for v in e.world.vehicles.values()
+                                )
+                            )
+                        self.assertTrue(e.finished)
+                        self.assertIsNone(planner.routing_fallback_reason)
+                        states.append(trace)
+                self.assertEqual(states[0], states[1])
 
 
 class DiscoveryAndAPITests(unittest.TestCase):

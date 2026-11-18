@@ -129,6 +129,10 @@ class MatrixRoutes(Algorithm):
         Returns:
             PlanUpdates: Selected routes for replanning vehicles; routes outside the
                 diagnosed move set receive a leading wait step.
+
+        Subclasses customize the stages through :meth:`_select_routes` and
+        :meth:`_adjust_move_set`; candidate generation, the fleet diagnosis and wait
+        masking stay in this class so every planner built on it shares them.
         """
         if world.map is not self.map:
             self.cache.clear()
@@ -151,18 +155,66 @@ class MatrixRoutes(Algorithm):
         generated = self._generate(world.map, requests) if requests else {}
         for key, choices in generated.items():
             self.cache[key] = choices
+        selected = self._select_routes(world, planning, generated)
+        fronts = self._fronts(world, selected)
+        moving = set(diagnose_move_set(world, fronts))
+        self._adjust_move_set(world, fronts, moving, selected)
+        return self._masked_plans(world, selected, moving)
+
+    def _candidates(
+        self,
+        world: WorldView,
+        vehicle_id: int,
+        key: tuple[int, int],
+        generated: dict[tuple[int, int], tuple[tuple[Cell, ...], ...]],
+    ) -> tuple[tuple[Cell, ...], ...] | None:
+        """
+        Return the candidate routes of one replanning vehicle, generating them if evicted.
+
+        Args:
+            world      (WorldView): Snapshot used to read the vehicle endpoints.
+            vehicle_id (int): Replanning vehicle.
+            key        (tuple[int, int]): Source and goal cell IDs.
+            generated  (dict): Candidates generated earlier in this call.
+
+        Returns:
+            tuple[tuple[Cell, ...], ...] | None: Distinct candidate routes, or None when
+                the vehicle no longer has both endpoints.
+        """
+        choices = generated.get(key)
+        if choices is None:
+            choices = self.cache.get(key)
+        if choices is None:
+            vehicle = world.vehicles[vehicle_id]
+            if vehicle.cell is None or vehicle.goal is None:
+                return None
+            choices = self._generate(world.map, {key: (vehicle.cell, vehicle.goal)})[key]
+            self.cache[key] = choices
+        return choices
+
+    def _select_routes(
+        self,
+        world: WorldView,
+        planning: list[tuple[int, tuple[int, int]]],
+        generated: dict[tuple[int, int], tuple[tuple[Cell, ...], ...]],
+    ) -> dict[int, tuple[Cell, ...]]:
+        """
+        Pick one candidate per replanning vehicle by backend-weighted length and occupancy.
+
+        Args:
+            world     (WorldView): Snapshot with occupancy.
+            planning  (list[tuple[int, tuple[int, int]]]): Replanning vehicles and endpoint keys.
+            generated (dict): Candidates generated earlier in this call.
+
+        Returns:
+            dict[int, tuple[Cell, ...]]: Selected route per replanning vehicle.
+        """
         rows = []
         pending = []
         for vehicle_id, key in planning:
-            choices = generated.get(key)
+            choices = self._candidates(world, vehicle_id, key, generated)
             if choices is None:
-                choices = self.cache.get(key)
-            if choices is None:
-                vehicle = world.vehicles[vehicle_id]
-                if vehicle.cell is None or vehicle.goal is None:
-                    continue
-                choices = self._generate(world.map, {key: (vehicle.cell, vehicle.goal)})[key]
-                self.cache[key] = choices
+                continue
             begin = len(rows)
             for route in choices:
                 count = sum(
@@ -177,6 +229,41 @@ class MatrixRoutes(Algorithm):
         for vehicle_id, choices, begin in pending:
             index = min(range(len(choices)), key=lambda i: scores[begin + i])
             selected[vehicle_id] = choices[index]
+        return selected
+
+    def _adjust_move_set(
+        self,
+        world: WorldView,
+        fronts: dict[int, Cell],
+        moving: set[int],
+        selected: dict[int, tuple[Cell, ...]],
+    ) -> None:
+        """
+        Hook for subclasses to admit extra movers after the fleet diagnosis; no-op here.
+
+        An override may update ``fronts``, ``moving`` and ``selected`` in place, but every
+        vehicle it adds must claim a cell that no existing mover claims and that is empty
+        or vacated by a mover, so the kernel still accepts the whole move set.
+
+        Args:
+            world    (WorldView): Snapshot with occupancy.
+            fronts   (dict[int, Cell]): Next requested cell per active vehicle.
+            moving   (set[int]): Vehicles predicted to move on the next kernel step.
+            selected (dict[int, tuple[Cell, ...]]): Routes chosen in this call.
+        """
+
+    @staticmethod
+    def _fronts(world: WorldView, selected: dict[int, tuple[Cell, ...]]) -> dict[int, Cell]:
+        """
+        Collect the next requested cell of every active on-grid vehicle.
+
+        Args:
+            world    (WorldView): Snapshot with current cells and queued plans.
+            selected (dict[int, tuple[Cell, ...]]): Routes chosen in this call.
+
+        Returns:
+            dict[int, Cell]: Next cell per active vehicle; its own cell when it has no step.
+        """
         fronts: dict[int, Cell] = {}
         for vehicle in world.vehicles.values():
             if vehicle.cell is None or vehicle.execution_state not in ACTIVE:
@@ -188,7 +275,24 @@ class MatrixRoutes(Algorithm):
                 fronts[vehicle.id] = vehicle.plan[0]
             else:
                 fronts[vehicle.id] = vehicle.cell
-        moving = diagnose_move_set(world, fronts)
+        return fronts
+
+    @staticmethod
+    def _masked_plans(
+        world: WorldView, selected: dict[int, tuple[Cell, ...]], moving: set[int]
+    ) -> PlanUpdates:
+        """
+        Return selected routes and prepend an explicit wait for vehicles outside the move set.
+
+        Args:
+            world    (WorldView): Snapshot with current cells and queued plans.
+            selected (dict[int, tuple[Cell, ...]]): Routes chosen in this call.
+            moving   (set[int]): Vehicles predicted to move on the next kernel step.
+
+        Returns:
+            PlanUpdates: Replacement plans; unchanged plans that already start with a wait
+                are omitted.
+        """
         updates = {}
         for vehicle_id, route in selected.items():
             vehicle = world.vehicles[vehicle_id]
