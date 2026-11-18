@@ -6,8 +6,8 @@
 
 | 层级 | 入口 | 用途 |
 | --- | --- | --- |
-| 后端自动化测试 | [main.py](../main.py) 的 `self-test` 命令 | 执行 142 个 Python unittest 用例，检查实体、移动、任务、算法、参数、HTTP 和并行执行 |
-| 浏览器回归测试 | [浏览器脚本目录](../tests/) 中的 `browser_*.cjs` | 使用真实浏览器检查交互、参数编辑、事件、列表展开和渲染稳定性；不计入 142 个 Python 用例 |
+| 后端自动化测试 | [main.py](../main.py) 的 `self-test` 命令 | 执行 152 个 Python unittest 用例，检查实体、移动、任务、算法、参数、HTTP 和并行执行 |
+| 浏览器回归测试 | [浏览器脚本目录](../tests/) 中的 `browser_*.cjs` | 使用真实浏览器检查交互、参数编辑、事件、列表展开和渲染稳定性；不计入 152 个 Python 用例 |
 | 算法启动检查 | [Registry](../framework/registry.py) | 导入候选算法并运行小型场景，仅将通过的算法加入可选列表 |
 | 静态类型检查 | [Python 源码](../framework/) 及算法、入口和测试 | 检查类型契约；与运行测试分开执行，不证明运行逻辑或算法效果 |
 
@@ -33,7 +33,7 @@
 - 距离数组缓存与候选路线缓存使用不同数据结构、计费规则和调用位置，需要各自验证。
 - 后端 JSON 正确与浏览器实际展示正确需要分别验证；播放竞态和绘制稳定性也不由基础点击检查替代。
 
-[测试夹具目录](../tests/) 中的 `probe_*.py` 提供故意出错、挂起、慢速推进和显式等待的算法，不计入 142 个 unittest 方法。删除夹具会失去对应失败路径的可重复触发方式。
+[测试夹具目录](../tests/) 中的 `probe_*.py` 提供故意出错、挂起、慢速推进和显式等待的算法，不计入 152 个 unittest 方法。删除夹具会失去对应失败路径的可重复触发方式。
 
 | 变更范围 | 建议验证 |
 | --- | --- |
@@ -103,7 +103,7 @@
 | `test_independent_compute_backend_satisfies_protocol` | 注入一个不继承 CPUBackend、但实现 ComputeBackend 协议的评分器 | MatrixRoutes 实际调用该评分器，场景完成，快照报告实际后端 |
 | `test_cpu_score_and_cuda_fallback` | 对同一小矩阵请求 CPU 和 CUDA 评分 | 评分一致；CUDA 回退 CPU 时提供原因 |
 | `test_cuda_runtime_error_has_cpu_replacement` | 用 mock 在 CUDA 计算入口制造异常 | 本次评分由 CPU 完成，后端切换 CPU，并保存异常原因 |
-| `test_matrix_routes_cpu_optional_cuda_rollout_parity` | 同一 4 车、12 任务场景分别请求 CPU 和 CUDA | 两次均完成；逐 tick 的车辆位置和剩余计划轨迹一致 |
+| `test_matrix_routes_cpu_optional_cuda_rollout_parity` | MatrixRoutes 和 Challenger 分别在同一 4 车、12 任务场景下请求 CPU 和 CUDA | 每个规划器两次均完成；逐 tick 的车辆位置和剩余计划轨迹一致；没有路由回退 |
 | `test_cpu_backend_exposes_no_tensor_entry` | CPU 后端请求 tensor 入口 | 返回 None，不隐式导入 torch |
 | `test_cuda_backend_hands_torch_only_when_effective` | CUDA 后端在 effective=cuda 与回退 cpu 两种状态请求入口 | 仅实际 cuda 时返回 torch 模块与 cuda 设备；回退状态返回 None |
 
@@ -265,6 +265,23 @@ CUDA 请求允许回退 CPU。因此通过测试不一定表示执行过 GPU 运
 | `test_cycle_masks_outside_claimant_to_rotate` | 三车环，另有环外车辆请求环内格点 | 环内三车移动，环外车辆被掩码 |
 | `test_diagnosis_matches_kernel_resolution_when_masking_rescues_cycle` | 真实地图的有向四格环 + 一个高等待值的外部入口车辆；先诊断，再按掩码后的请求调用内核 `resolve_moves()` | 诊断集合包含环上四车；掩码后内核实际移动集合与之相等；不掩码时内核放行的车辆更少（外部车辆抢走环上格点导致级联冻结） |
 | `test_forty_vehicle_deadlock_regression_finishes` | 默认地图 40 车、1000 任务、seed 0、3000 tick 预算 | 完成后全部 1000 个任务（同场景加入诊断前只完成 164 个，仅作对照，不在断言内） |
+
+### Challenger：10 个
+
+源码：[test_challenger.py](../tests/test_challenger.py)。算法说明见 [Challenger](algorithms/planning/challenger.md)。CPU/CUDA 轨迹一致性在上面的计算后端用例中与 MatrixRoutes 一起检查。
+
+| 用例 | 场景或操作 | 预期行为 |
+| --- | --- | --- |
+| `test_parameters_extend_matrix_routes` | 检查参数声明并传入部分自定义参数 | 前五个参数与 MatrixRoutes 相同；自定义值生效，未传入的参数使用默认值 |
+| `test_small_scenario_finishes` | 1×1 小地图，2 车 4 任务 | 300 tick 内完成，世界不变量成立 |
+| `test_large_fleet_finishes_without_deadlock` | 默认地图，100 车 400 任务 | 4000 tick 内完成且全部回库，世界不变量成立 |
+| `test_exit_clearing_speeds_up_dispatch` | 同一 100 车场景，分别开启和关闭 `clear_exit` | 开启时所有车辆出库完成的 tick 更早 |
+| `test_route_scoring_goes_through_backend` | 用记录调用的 CPU 后端运行 20 车 40 tick，并自定义三个权重 | 每次评分都调用 `backend.score`，特征行为 3 列，权重为 `[distance_weight, occupancy_weight, stop_weight]`；至少一条候选经过停靠点 |
+| `test_features_count_stops_before_goal_only` | 一条 3 格路线，中间格点有 2 个停靠、终点有 5 个停靠 | 特征行为 `[3, 0, 2]`，终点自身的停靠不计入 |
+| `test_reservation_overlap_and_horizon` | `horizon=2` 时预约一条路线，再查询不同路线的重叠 | 只记录前 2 步；不相交路线重叠为 0；同格同步计 1，相差一步计 0.5 |
+| `test_stop_aware_route_detours_around_stops` | 在最短路经过的格点上放大量停靠 | 无停靠时经过该格点；有停靠时绕开它、终点正确、每步都沿有向邻接移动，路线更长 |
+| `test_aware_candidate_switch` | 分别开启和关闭 `aware_candidate` 运行 40 tick | 只有开启时才调用额外的 Dijkstra 候选 |
+| `test_blocked_exit_vehicle_leaves_through_free_neighbour` | NW 出口车要向东，东侧被装卸中的车辆挡住，停车场里还有一辆车排队 | 开启 `clear_exit` 时出口车第一步改为南侧空格点，路线仍到达目标；关闭时第一步为原地等待 |
 
 ### 工具公共逻辑与比较 CLI：8 个
 

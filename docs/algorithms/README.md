@@ -23,5 +23,6 @@
 | `shortest_path` | [ShortestPath](planning/shortest_path.md) | 计划为空时生成有向最短路线 |
 | `traffic_aware` | [TrafficAware](planning/traffic_aware.md) | 持续等待后，按当前格点占用惩罚重新规划 |
 | `matrix_routes` | [MatrixRoutes](planning/matrix_routes.md) | 用矩阵值迭代生成候选路线，按距离和占用特征评分，再对全车队做一次移动集合诊断；可选 CUDA tensor 加速 |
+| `challenger` | [Challenger](planning/challenger.md) | 沿用 MatrixRoutes 的候选与诊断，选路时额外避开停靠点、按软时空预约分散车流，并在出车口受阻时绕行以保持出库 |
 
 新增算法时，在对应分类下增加独立说明，并在本目录更新入口。算法插件可以是单个 Python 文件或文件夹形式，具体发现、声明和校验规则见 [公共协议与开发](common.md)。
