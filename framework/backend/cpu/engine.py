@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Mapping
+from math import isfinite
 from random import Random
 from types import MappingProxyType
 from typing import Any, Callable
 
 from config.resources import MAX_STEP_TICKS, MAX_RUN_TICKS, MAX_PLAN_STEPS
+from config.scenario import DEFAULTS
 
 from ...utils.graph import distances_to
 
-from ..domain import Cell, Map, World, Vehicle, Task, TaskState, ExecutionState as S, MovementPlan
+from ..domain import Cell, CellKind, Map, World, Vehicle, Task, TaskState, ExecutionState as S, MovementPlan, MovementState
 from ..contracts import (
     TaskView, VehicleView, WorldView, AssignmentUpdates, PlanUpdates, MoveResult,
     ComputeBackend, TaskAssignmentAlgorithm, PlanningAlgorithm,
@@ -23,25 +26,101 @@ from .map_builder import build_map
 ACTIVE = (S.TO_PICKUP, S.TO_DROPOFF, S.RETURNING)
 
 
-def resolve_moves(world: World, requests: dict[int, Cell]) -> tuple[dict[int, Cell], dict[int, str]]:
+def _settle_free_moves(
+    world: World, moving: Mapping[int, Cell], claims: Mapping[int, list[int]],
+) -> dict[int, Cell]:
+    """
+    Settle the vehicles that can move without resolving a contested cell.
+
+    A vehicle settles when it is the only claimant of its destination and that
+    destination is either empty or will be vacated by another settled vehicle.
+    Every settled vehicle contributes one vacated source cell, so following
+    chains grow outward from empty destinations in one queue pass. Destinations
+    with several claimants are deliberately left to the competition phase.
+
+    Args:
+        world  (World): Current vehicles and occupancy index.
+        moving (Mapping[int, Cell]): Valid non-wait requests keyed by vehicle ID.
+        claims (Mapping[int, list[int]]): Claimants per requested destination cell ID.
+
+    Returns:
+        dict[int, Cell]: Settled vehicle ID to accepted destination.
+    """
+    vehicles = world.vehicles
+    settled: dict[int, Cell] = {}
+    queue: deque[int] = deque()
+    for cell_id, contenders in claims.items():
+        if len(contenders) != 1:
+            continue
+        identity = contenders[0]
+        if world.occupancy.get(cell_id) is None:
+            settled[identity] = moving[identity]
+            queue.append(identity)
+    while queue:
+        mover = queue.popleft()
+        source = vehicles[mover].cell
+        if source is None:
+            raise RuntimeError("Settled vehicle has no source cell")
+        contenders = claims.get(source.id)
+        if not contenders or len(contenders) != 1:
+            continue
+        follower = contenders[0]
+        if follower in settled:
+            continue
+        settled[follower] = moving[follower]
+        queue.append(follower)
+    return settled
+
+
+def resolve_moves(
+    world: World, requests: dict[int, Cell], *,
+    claim_scores: Mapping[int, float] | None = None,
+    junction_wait_weight: float = DEFAULTS["junction_wait_weight"],
+    junction_position_bonus: float = DEFAULTS["junction_position_bonus"],
+) -> tuple[dict[int, Cell], dict[int, str]]:
     """
     Resolve simultaneous movement requests from one occupancy snapshot.
+
+    Arbitration runs in two phases. First every vehicle that can move without
+    resolving a contested cell is settled: it must be the only claimant of its
+    destination, and the destination must be empty or vacated by another settled
+    vehicle. This settles following chains from empty fronts outward. Second,
+    contested destinations compare the planner-provided complete claim score when
+    present; otherwise the kernel falls back to weighted waiting ticks plus the
+    junction-position score. The kernel never derives or interprets planner
+    features. Opposing edge swaps are rejected and stopped-vehicle blocking
+    propagates through the remaining requests.
 
     Args:
         world    (World): Current vehicle state and occupancy index.
         requests (dict[int, Cell]): Requested next cell for each participating vehicle.
+        claim_scores (Mapping[int, float] | None): Complete planner-computed
+            scores for contested destinations. A present entry replaces the
+            kernel's generic waiting/position fallback; missing entries fall back.
+        junction_wait_weight (float): Score per consecutive tick of waiting.
+        junction_position_bonus (float): Score for a claimant already on a junction cell.
 
     Returns:
         tuple[dict[int, Cell], dict[int, str]]: Accepted destinations and rejection
-            reasons. Following and cycles of at least three vehicles are allowed;
-            opposing edge swaps and moves into stopped vehicles are rejected.
+            reasons. Settled moves are accepted first. For the remaining contested
+            destinations the highest claim score wins; equal scores keep the
+            first request in arbiter input order. Following and cycles of at least
+            three vehicles are allowed; opposing edge swaps and moves into stopped
+            vehicles are rejected.
 
     Raises:
-        ValueError: If a parked vehicle requests on-grid movement, or a requested
-            destination is not an allowed neighbor.
+        ValueError: If a parked vehicle requests on-grid movement, a requested
+            destination is not an allowed neighbor, or claim scores are invalid.
     """
     vehicles = world.vehicles
-    rotation = {v.id: (i - world.tick) % len(vehicles) for i, v in enumerate(vehicles.values())}
+    if claim_scores is not None:
+        if not isinstance(claim_scores, Mapping):
+            raise ValueError("claim scores must be a mapping")
+        for identity, score in claim_scores.items():
+            if type(identity) is not int or identity not in vehicles:
+                raise ValueError(f"Invalid claim score vehicle: {identity!r}")
+            if type(score) not in (int, float) or not isfinite(score):
+                raise ValueError(f"Invalid claim score for vehicle {identity}: {score!r}")
     moving = {}
     reasons = {}
     for identity, dest in requests.items():
@@ -57,30 +136,54 @@ def resolve_moves(world: World, requests: dict[int, Cell]) -> tuple[dict[int, Ce
     claims = {}
     for identity, dest in moving.items():
         claims.setdefault(dest.id, []).append(identity)
+    settled = _settle_free_moves(world, moving, claims)
+    pending = {identity: dest for identity, dest in moving.items() if identity not in settled}
+
+    def claim_score(identity: int) -> float:
+        """Return the planner score when supplied, else the generic fallback."""
+        if claim_scores is not None and identity in claim_scores:
+            return float(claim_scores[identity])
+        vehicle = vehicles[identity]
+        score = junction_wait_weight * vehicle.wait_ticks
+        if vehicle.cell is not None and vehicle.cell.kind is CellKind.JUNCTION:
+            score += junction_position_bonus
+        return score
+
     for contenders in claims.values():
-        winner = min(contenders, key=lambda i: (-vehicles[i].wait_ticks, rotation[i]))
+        if len(contenders) < 2:
+            continue
+        winner = contenders[0]
+        winner_priority = claim_score(winner)
+        for identity in contenders[1:]:
+            candidate_priority = claim_score(identity)
+            if candidate_priority > winner_priority:
+                winner = identity
+                winner_priority = candidate_priority
         for identity in contenders:
             if identity != winner:
-                moving.pop(identity)
+                pending.pop(identity, None)
                 reasons[identity] = "node_conflict"
     swaps = set()
-    for identity, dest in moving.items():
+    for identity, dest in pending.items():
         other = world.occupancy.get(dest.id)
-        if other and other.id in moving and moving[other.id] is vehicles[identity].cell:
+        if other and other.id in pending and pending[other.id] is vehicles[identity].cell:
             swaps.update((identity, other.id))
     for identity in swaps:
-        moving.pop(identity)
+        pending.pop(identity)
         reasons[identity] = "edge_swap"
+    accepted = dict(settled)
+    accepted.update(pending)
     changed = True
     while changed:
         changed = False
-        for identity, dest in list(moving.items()):
+        for identity, dest in list(pending.items()):
             other = world.occupancy.get(dest.id)
-            if other and other.id not in moving:
-                moving.pop(identity)
+            if other and other.id not in accepted:
+                pending.pop(identity)
+                accepted.pop(identity)
                 reasons[identity] = "occupied_by_stopped_vehicle"
                 changed = True
-    return moving, reasons
+    return accepted, reasons
 
 
 class Engine:
@@ -196,6 +299,7 @@ class Engine:
                 tuple(v.plan.steps),
                 v.wait_ticks,
                 v.parking_area.exit if v.parking_area else None,
+                v.movement_state,
             )
             for v in w.vehicles.values()
         }
@@ -206,6 +310,8 @@ class Engine:
             MappingProxyType(tasks),
             MappingProxyType({c: vehicles[v.id] for c, v in w.occupancy.items()}),
             self.last_results,
+            self.config.junction_wait_weight,
+            self.config.junction_position_bonus,
         )
 
     def assign(self, updates: AssignmentUpdates) -> frozenset[int]:
@@ -275,13 +381,22 @@ class Engine:
         entire batch precedes replacement; omitted vehicles retain their old plans.
 
         Args:
-            updates (PlanUpdates): Vehicle IDs mapped to proposed movement queues.
+            updates (PlanUpdates): Vehicle IDs mapped to proposed movement queues and
+                optional complete claim scores.
 
         Raises:
-            ValueError: If a vehicle, plan, cell reference, transition or length is invalid.
+            ValueError: If a vehicle, plan, cell reference, transition, length or
+                claim score is invalid.
         """
         if not isinstance(updates, PlanUpdates) or not isinstance(updates.plans, Mapping):
             raise ValueError("update must return PlanUpdates(mapping)")
+        if not isinstance(updates.claim_scores, Mapping):
+            raise ValueError("claim_scores must be a mapping")
+        for identity, score in updates.claim_scores.items():
+            if type(identity) is not int or identity not in self.world.vehicles:
+                raise ValueError(f"Invalid claim score vehicle: {identity!r}")
+            if type(score) not in (int, float) or not isfinite(score):
+                raise ValueError(f"Invalid claim score for vehicle {identity}: {score!r}")
         checked = {}
         for identity, plan in updates.plans.items():
             v = self.world.vehicles.get(identity)
@@ -476,6 +591,7 @@ class Engine:
                 v.plan = MovementPlan()
                 v.distance += 1
                 v.wait_ticks = 0
+                v.movement_state = MovementState.PARKED
         servicing = {v.id for v in w.vehicles.values() if v.execution_state in (S.PICKUP, S.DROPOFF)}
         planning_tasks = allocation_view.tasks
         if changed_tasks:
@@ -485,7 +601,8 @@ class Engine:
             for task_id in changed_tasks:
                 refreshed_tasks[task_id] = self._task_view(w.tasks[task_id])
             planning_tasks = MappingProxyType(refreshed_tasks)
-        self.install_plans(self.planner.update(self._view_with_tasks(planning_tasks)))
+        updates = self.planner.update(self._view_with_tasks(planning_tasks))
+        self.install_plans(updates)
         eligible = {v.id for v in w.vehicles.values() if v.cell is not None and v.execution_state in ACTIVE}
         requests: dict[int, Cell] = {}
         for identity in sorted(eligible):
@@ -493,7 +610,12 @@ class Engine:
             if vehicle.cell is None:
                 raise RuntimeError("Eligible vehicle has no grid position")
             requests[identity] = vehicle.plan.steps[0] if vehicle.plan.steps else vehicle.cell
-        moving, reasons = resolve_moves(w, requests)
+        moving, reasons = resolve_moves(
+            w, requests,
+            claim_scores=updates.claim_scores,
+            junction_wait_weight=self.config.junction_wait_weight,
+            junction_position_bonus=self.config.junction_position_bonus,
+        )
         self._sample_roads(eligible - moving.keys())
         originals = {i: w.vehicles[i].cell for i in eligible}
         # Two-phase commit preserves legal following and simultaneous cycles.
@@ -524,6 +646,7 @@ class Engine:
                 if v.current_task:
                     v.current_task.road_wait += 1
             v.blocked_reason = "" if accepted else reason
+            v.movement_state = MovementState.MOVED if accepted else MovementState(reason)
             source = originals[identity]
             requested = requests[identity]
             if source is None or requested is None or v.cell is None:
@@ -567,6 +690,7 @@ class Engine:
                 v.has_departed = True
                 v.wait_ticks = 0
                 v.blocked_reason = ""
+                v.movement_state = MovementState.MOVED
                 spawned.add(v.id)
                 self.last_dispatch[parking.id] = w.tick
             for v in queue:
@@ -574,6 +698,7 @@ class Engine:
                     continue
                 v.wait_ticks += 1
                 v.blocked_reason = "dispatch_queue"
+                v.movement_state = MovementState.DISPATCH_QUEUE
                 if not v.has_departed:
                     v.initial_dispatch_wait += 1
                 else:

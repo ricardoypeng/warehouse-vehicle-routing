@@ -15,6 +15,8 @@ class ScenarioDefaults(TypedDict):
     release_interval: int
     service_ticks: int
     dispatch_interval: int
+    junction_wait_weight: float
+    junction_position_bonus: float
     assignment: str
     planning: str
     device: str
@@ -31,6 +33,8 @@ DEFAULTS: ScenarioDefaults = {
     "release_interval": 0,
     "service_ticks": 2,
     "dispatch_interval": 1,
+    "junction_wait_weight": 1.0,
+    "junction_position_bonus": 30.0,
     "assignment": "road_greedy",
     "planning": "shortest_path",
     "device": "auto",
@@ -48,5 +52,7 @@ NUMERIC_BOUNDS = {
     "service_ticks": (0, 10000),
     "dispatch_interval": (1, 10000),
 }
+
+JUNCTION_WEIGHT_MAX = 1_000_000
 
 DEVICES = ("cpu", "cuda", "auto")

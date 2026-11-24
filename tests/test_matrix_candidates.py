@@ -270,8 +270,8 @@ class MatrixDiagnosisTests(unittest.TestCase):
     def test_single_claim_on_free_cell_uses_wait_priority(self) -> None:
         first, second, free = self.cells[0], self.cells[1], self.cells[2]
         views = {
-            0: VehicleView(0, first, None, None, ExecutionState.TO_PICKUP, (), 1, None),
-            1: VehicleView(1, second, None, None, ExecutionState.TO_PICKUP, (), 5, None),
+            0: VehicleView(0, first, None, None, ExecutionState.TO_PICKUP, (), 0, None),
+            1: VehicleView(1, second, None, None, ExecutionState.TO_PICKUP, (), 3, None),
         }
         occupancy = {first.id: views[0], second.id: views[1]}
         world = WorldView(0, self.map, MappingProxyType(views), MappingProxyType({}), MappingProxyType(occupancy))
@@ -321,9 +321,7 @@ class MatrixDiagnosisTests(unittest.TestCase):
             vehicle.cell = cell
             vehicle.execution_state = ExecutionState.TO_PICKUP
             world.occupancy[cell.id] = vehicle
-        for vehicle in vehicles[:4]:
-            vehicle.wait_ticks = 0
-        vehicles[4].wait_ticks = 5
+        vehicles[4].wait_ticks = int(engine.config.junction_position_bonus) + 1
         fronts = {vehicles[index].id: cycle[(index + 1) % 4] for index in range(4)}
         fronts[vehicles[4].id] = cycle[entry_index]
         moving = diagnose_move_set(engine.view(), fronts)

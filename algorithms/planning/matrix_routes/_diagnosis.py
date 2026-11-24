@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Mapping
 
 from framework.backend.contracts import WorldView
-from framework.backend.domain import Cell
+from framework.backend.domain import Cell, CellKind
 
 
 def _seed_cycles(successor: list[int]) -> int:
@@ -45,7 +45,9 @@ def _seed_cycles(successor: list[int]) -> int:
     return seeded
 
 
-def diagnose_move_set(world: WorldView, fronts: Mapping[int, Cell]) -> frozenset[int]:
+def diagnose_move_set(
+    world: WorldView, fronts: Mapping[int, Cell],
+) -> frozenset[int]:
     """
     Decide which vehicles may move during the next kernel step, for all vehicles at once.
 
@@ -67,11 +69,11 @@ def diagnose_move_set(world: WorldView, fronts: Mapping[int, Cell]) -> frozenset
     2. **Propagation layers.** Starting from the seeded cycles, every free destination
        seeds its highest-priority claimant, and every vacated cell hands over to the
        highest-priority claimant of that cell. One claimant per destination survives,
-       chosen by the kernel's own priority: longest wait first, then the deterministic
-       rotation order. The dependency layers are exactly the chain lengths, but the
-       implementation follows them with one queue pass, so every slot is examined once
-       and the layer cost is O(V). Chains that end at a stopped vehicle or at a
-       rejected swap are never admitted.
+       chosen by the kernel's generic score: weighted waiting plus the junction
+       position bonus. MatrixRoutes submits no claim scores, so no
+       planner-specific feature enters this diagnosis. Equal scores use ascending
+       vehicle ID. The dependency chains are followed with one queue pass. Chains
+       that end at a stopped vehicle or at a rejected swap are never admitted.
     3. **Mask layer.** Slots outside the move set are returned so the planner can
        prepend an explicit wait to their plans. Masking the blocked claimants is what
        lets a seeded cycle rotate: their claims disappear before the kernel resolves
@@ -81,7 +83,7 @@ def diagnose_move_set(world: WorldView, fronts: Mapping[int, Cell]) -> frozenset
     must change with them. It reads only the read-only world view.
 
     Args:
-        world (WorldView): Snapshot with canonical cells, occupancy and tick.
+        world (WorldView): Snapshot with canonical cells and occupancy.
         fronts (Mapping[int, Cell]): Next requested cell per active vehicle ID.
             Every key must name an active vehicle that currently has a cell, and
             the mapping must cover every active on-grid vehicle; omitted vehicles
@@ -98,8 +100,6 @@ def diagnose_move_set(world: WorldView, fronts: Mapping[int, Cell]) -> frozenset
         return frozenset()
     slot_of = {vehicle_id: index for index, vehicle_id in enumerate(slot_ids)}
     vehicles = world.vehicles
-    order = {vehicle_id: index for index, vehicle_id in enumerate(vehicles)}
-    rotation = [(order[vehicle_id] - world.tick) % len(vehicles) for vehicle_id in slot_ids]
     positions: list[Cell] = []
     for vehicle_id in slot_ids:
         cell = vehicles[vehicle_id].cell
@@ -107,7 +107,6 @@ def diagnose_move_set(world: WorldView, fronts: Mapping[int, Cell]) -> frozenset
             raise ValueError(f"diagnose_move_set requires an on-grid vehicle: {vehicle_id}")
         positions.append(cell)
     destinations = [fronts[vehicle_id] for vehicle_id in slot_ids]
-    wait_ticks = [vehicles[vehicle_id].wait_ticks for vehicle_id in slot_ids]
 
     claims: list[int] = []
     frozen = [False] * len(slot_ids)
@@ -132,9 +131,14 @@ def diagnose_move_set(world: WorldView, fronts: Mapping[int, Cell]) -> frozenset
     moving = _seed_cycles(successor)
     taken = {destinations[index].id for index in range(len(slot_ids)) if moving >> index & 1}
 
-    def priority(index: int) -> tuple[int, int]:
-        """Order destination claimants the way the kernel resolves conflicts."""
-        return -wait_ticks[index], rotation[index]
+    def priority(index: int) -> tuple[float, int]:
+        """Order destination claimants the way generic kernel arbitration does."""
+        identity = slot_ids[index]
+        vehicle = vehicles[identity]
+        score = world.junction_wait_weight * vehicle.wait_ticks
+        if vehicle.cell is not None and vehicle.cell.kind is CellKind.JUNCTION:
+            score += world.junction_position_bonus
+        return -score, identity
 
     free_claims: dict[int, list[int]] = {}
     waiting: dict[int, list[int]] = {}

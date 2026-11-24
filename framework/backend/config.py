@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict, field
 from typing import Any
 
-from config.scenario import DEFAULTS, DEVICES, NUMERIC_BOUNDS
+from config.scenario import DEFAULTS, DEVICES, JUNCTION_WEIGHT_MAX, NUMERIC_BOUNDS
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,8 @@ class Config:
         release_interval   (int): Tick spacing between successive task releases.
         service_ticks      (int): Duration of each pickup and dropoff service.
         dispatch_interval  (int): Minimum tick spacing between departures from one parking area.
+        junction_wait_weight (float): Score per consecutive tick of waiting during movement arbitration.
+        junction_position_bonus (float): Score added when the claimant is already on a junction cell.
         assignment         (str): Validated assignment plugin identifier.
         planning           (str): Validated planning plugin identifier.
         device             (str): Requested scoring backend: cpu, cuda or auto.
@@ -46,6 +48,8 @@ class Config:
     device: str = field(default=DEFAULTS["device"], init=True)
     assignment_options: dict[str, Any] = field(default_factory=dict)
     planning_options: dict[str, Any] = field(default_factory=dict)
+    junction_wait_weight: float = DEFAULTS["junction_wait_weight"]
+    junction_position_bonus: float = DEFAULTS["junction_position_bonus"]
 
     def __post_init__(self) -> None:
         """
@@ -59,6 +63,10 @@ class Config:
             value = getattr(self, name)
             if type(value) is not int or not lo <= value <= hi:
                 raise ValueError(f"{name} must be an integer in [{lo}, {hi}]")
+        for name in ("junction_wait_weight", "junction_position_bonus"):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not 0 <= value <= JUNCTION_WEIGHT_MAX:
+                raise ValueError(f"{name} must be a number in [0, {JUNCTION_WEIGHT_MAX}]")
         for name in ("assignment", "planning", "device"):
             if not isinstance(getattr(self, name), str):
                 raise ValueError(f"{name} must be a string")

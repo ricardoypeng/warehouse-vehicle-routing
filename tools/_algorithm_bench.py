@@ -19,6 +19,7 @@ bootstrap()
 
 from config.benchmark import COMPARISON_TRIAL_TIMEOUT_SECONDS
 from framework.backend.config import Config
+from framework.backend.contracts import BackendInfo
 from framework.registry import Registry
 from framework.utils.fingerprint import task_hash
 from framework.utils.junction import junction_cache
@@ -63,7 +64,7 @@ def parse_mapping(value: str | None) -> dict[str, dict[str, Any]]:
 class _TrialRunError(RuntimeError):
     """Carry the backend snapshot of a trial that failed after engine construction."""
 
-    def __init__(self, message: str, backend: dict[str, Any]) -> None:
+    def __init__(self, message: str, backend: BackendInfo) -> None:
         super().__init__(message)
         self.backend = backend
 

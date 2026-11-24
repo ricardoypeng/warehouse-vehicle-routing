@@ -16,7 +16,7 @@ from framework.runtime import bootstrap, TMP
 
 bootstrap()
 from framework.backend.config import Config
-from framework.backend.domain import Cell, CellKind, ExecutionState as S, Map, MovementPlan, TaskState, Vehicle, World
+from framework.backend.domain import Cell, CellKind, ExecutionState as S, Map, MovementPlan, MovementState, TaskState, Vehicle, World
 from framework.backend.contracts import AssignmentUpdates, BackendInfo, ComputeBackend, PlanUpdates
 from framework.backend.cpu.compute import CPUBackend
 from framework.backend.cpu.map_builder import build_map
@@ -142,6 +142,85 @@ class TransitionTests(unittest.TestCase):
             self.assertFalse(e.world.vehicles[identity].plan.steps)
         e.assert_invariants()
 
+    def test_free_chain_settles_before_contested_cell(self) -> None:
+        p0 = Cell(0, 0, 0, CellKind.ROAD)
+        p1 = Cell(1, 1, 0, CellKind.ROAD)
+        p2 = Cell(2, 2, 0, CellKind.ROAD)
+        p3 = Cell(3, 3, 0, CellKind.ROAD)
+        left = Cell(4, 4, 0, CellKind.ROAD)
+        right = Cell(5, 5, 0, CellKind.ROAD)
+        contested = Cell(6, 6, 0, CellKind.ROAD)
+        object.__setattr__(p0, "neighbors", (p1,))
+        object.__setattr__(p1, "neighbors", (p2,))
+        object.__setattr__(p2, "neighbors", (p3,))
+        object.__setattr__(left, "neighbors", (contested,))
+        object.__setattr__(right, "neighbors", (contested,))
+        cells = {0: p0, 1: p1, 2: p2, 3: p3, 4: left, 5: right, 6: contested}
+        map = Map(
+            width=7,
+            height=1,
+            cells=MappingProxyType(cells),
+            roads=MappingProxyType({}),
+            cell_by_position=MappingProxyType(
+                {(cell.x, cell.y): cell for cell in cells.values()}
+            ),
+            parking=MappingProxyType({}),
+            access_points=(),
+        )
+        world = World(
+            map,
+            {
+                0: Vehicle(0, p0),
+                1: Vehicle(1, p1),
+                2: Vehicle(2, p2),
+                3: Vehicle(3, left),
+                4: Vehicle(4, right),
+            },
+            {},
+        )
+        world.occupancy = {cell.id: world.vehicles[identity]
+                           for identity, cell in enumerate((p0, p1, p2, left, right))}
+        world.vehicles[4].wait_ticks = 30
+        moving, reasons = resolve_moves(
+            world, {0: p1, 1: p2, 2: p3, 3: contested, 4: contested}
+        )
+        self.assertEqual(moving, {0: p1, 1: p2, 2: p3, 4: contested})
+        self.assertEqual(reasons, {3: "node_conflict"})
+
+    def test_contested_winner_blocked_by_stopped_claimant_is_rejected(self) -> None:
+        start = Cell(0, 0, 0, CellKind.ROAD)
+        side = Cell(1, 1, 0, CellKind.ROAD)
+        target = Cell(2, 2, 0, CellKind.ROAD)
+        holder = Cell(3, 3, 0, CellKind.ROAD)
+        object.__setattr__(start, "neighbors", (target,))
+        object.__setattr__(side, "neighbors", (target,))
+        object.__setattr__(holder, "neighbors", (target,))
+        cells = {0: start, 1: side, 2: target, 3: holder}
+        map = Map(
+            width=4,
+            height=1,
+            cells=MappingProxyType(cells),
+            roads=MappingProxyType({}),
+            cell_by_position=MappingProxyType(
+                {(cell.x, cell.y): cell for cell in cells.values()}
+            ),
+            parking=MappingProxyType({}),
+            access_points=(),
+        )
+        world = World(
+            map,
+            {0: Vehicle(0, start), 1: Vehicle(1, side), 2: Vehicle(2, target),
+             3: Vehicle(3, holder)},
+            {},
+        )
+        world.occupancy = {cell.id: world.vehicles[identity]
+                           for identity, cell in enumerate((start, side, target, holder))}
+        world.vehicles[0].wait_ticks = 2
+        moving, reasons = resolve_moves(world, {0: target, 1: target, 2: target, 3: holder})
+        self.assertEqual(moving, {})
+        self.assertEqual(reasons[1], "node_conflict")
+        self.assertEqual(reasons[0], "occupied_by_stopped_vehicle")
+
     def test_edge_swap_is_rejected(self) -> None:
         left = Cell(0, 0, 0, CellKind.ROAD)
         right = Cell(1, 1, 0, CellKind.ROAD)
@@ -205,11 +284,93 @@ class TransitionTests(unittest.TestCase):
         target = e.world.map.cell_by_position[9, 4]
         for v in e.world.vehicles.values():
             v.plan = MovementPlan([target])
-        e.world.vehicles[1].wait_ticks = 5
+        e.world.vehicles[1].wait_ticks = int(e.config.junction_position_bonus) + 1
         e._step_once()
         self.assertIs(e.world.occupancy[target.id], e.world.vehicles[1])
         self.assertFalse(e.world.vehicles[1].plan.steps)
         self.assertIs(e.world.vehicles[0].plan.steps[0], target)
+
+    def test_equal_priority_keeps_first_request(self) -> None:
+        left = Cell(0, 0, 0, CellKind.ROAD)
+        right = Cell(1, 1, 0, CellKind.ROAD)
+        target = Cell(2, 2, 0, CellKind.ROAD)
+        object.__setattr__(left, "neighbors", (target,))
+        object.__setattr__(right, "neighbors", (target,))
+        map = Map(
+            width=3,
+            height=1,
+            cells=MappingProxyType({0: left, 1: right, 2: target}),
+            roads=MappingProxyType({}),
+            cell_by_position=MappingProxyType({(0, 0): left, (1, 0): right, (2, 0): target}),
+            parking=MappingProxyType({}),
+            access_points=(),
+        )
+        world = World(map, {0: Vehicle(0, left), 1: Vehicle(1, right)}, {})
+        world.occupancy = {left.id: world.vehicles[0], right.id: world.vehicles[1]}
+        moving, reasons = resolve_moves(world, {0: target, 1: target})
+        self.assertEqual(moving, {0: target})
+        self.assertEqual(reasons, {1: "node_conflict"})
+
+    def test_movement_state_tracks_latest_request(self) -> None:
+        e = engine(vehicles=2, tasks=0)
+        self.place(e, [(10, 4), (9, 3)])
+        target = e.world.map.cell_by_position[9, 4]
+        for vehicle in e.world.vehicles.values():
+            vehicle.plan = MovementPlan([target])
+        e._step_once()
+        states = {vehicle.movement_state for vehicle in e.world.vehicles.values()}
+        self.assertEqual(states, {MovementState.MOVED, MovementState.NODE_CONFLICT})
+        waiting = engine(vehicles=1, tasks=0)
+        self.place(waiting, [(10, 4)])
+        vehicle = waiting.world.vehicles[0]
+        assert vehicle.cell is not None
+        vehicle.plan = MovementPlan([vehicle.cell])
+        waiting._step_once()
+        self.assertIs(vehicle.movement_state, MovementState.PLANNED_WAIT)
+        self.assertEqual(vehicle.blocked_reason, "planned_wait")
+
+    def test_claim_score_decides_contested_junction(self) -> None:
+        e = engine(vehicles=3, tasks=0)
+        self.place(e, [(10, 4), (9, 3), (9, 2)])
+        first, second, follower = e.world.vehicles.values()
+        target = e.world.map.cell_by_position[9, 4]
+        popular, other = target.neighbors
+        first.plan = MovementPlan((target, target, popular))
+        second.plan = MovementPlan((target, other))
+        second.wait_ticks = 100
+        assert second.cell is not None and first.cell is not None and follower.cell is not None
+        follower.plan = MovementPlan((second.cell, target, popular))
+        requests = {first.id: target, second.id: target, follower.id: second.cell}
+        accepted, reasons = resolve_moves(
+            e.world, requests, claim_scores={first.id: 300}, junction_wait_weight=1,
+        )
+        self.assertEqual(accepted, {first.id: target})
+        self.assertEqual(reasons[second.id], "node_conflict")
+        self.assertEqual(reasons[follower.id], "occupied_by_stopped_vehicle")
+        accepted, reasons = resolve_moves(
+            e.world, requests, claim_scores={second.id: 300}, junction_wait_weight=1,
+        )
+        self.assertIn(second.id, accepted)
+        self.assertEqual(reasons[first.id], "node_conflict")
+
+    def test_invalid_claim_scores_are_rejected(self) -> None:
+        e = engine(vehicles=2, tasks=0)
+        self.place(e, [(10, 4), (9, 3)])
+        first, second = e.world.vehicles.values()
+        target = e.world.map.cell_by_position[9, 4]
+        requests = {first.id: target, second.id: target}
+        with self.assertRaises(ValueError):
+            resolve_moves(e.world, requests, claim_scores={first.id: float("nan")})
+        with self.assertRaises(ValueError):
+            resolve_moves(e.world, requests, claim_scores={first.id: float("inf")})
+        with self.assertRaises(ValueError):
+            resolve_moves(e.world, requests, claim_scores={first.id: True})
+        with self.assertRaises(ValueError):
+            resolve_moves(e.world, requests, claim_scores={first.id: "high"})
+        with self.assertRaises(ValueError):
+            resolve_moves(e.world, requests, claim_scores={99: 1.0})
+        with self.assertRaises(ValueError):
+            e.install_plans(PlanUpdates({}, {first.id: float("nan")}))
 
     def test_assignment_atomic_and_canonical_plan_cells(self) -> None:
         e = engine(vehicles=2, tasks=2)
