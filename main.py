@@ -78,6 +78,8 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_argument("--vehicles", type=int, default=argparse.SUPPRESS)
         sub.add_argument("--tasks", type=int, default=argparse.SUPPRESS)
         sub.add_argument("--seed", type=int, default=argparse.SUPPRESS)
+        sub.add_argument("--junction-wait-weight", type=float, default=argparse.SUPPRESS)
+        sub.add_argument("--junction-position-bonus", type=float, default=argparse.SUPPRESS)
         sub.add_argument("--ticks", type=int, default=DEFAULT_RUN_TICKS)
         sub.add_argument("--runtime-timeout", type=float, default=WORLD_TIMEOUT_SECONDS, help="Seconds without world progress before terminating its worker")
         sub.add_argument("--assignment", default=argparse.SUPPRESS)
@@ -145,7 +147,10 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("Config must contain an object")
     # Suppressed parser defaults identify explicit input after argparse has
     # resolved full names, accepted abbreviations and --name=value syntax.
-    for name in ("vehicles", "tasks", "seed", "assignment", "planning", "device"):
+    for name in (
+        "vehicles", "tasks", "seed", "assignment", "planning", "device",
+        "junction_wait_weight", "junction_position_bonus",
+    ):
         if hasattr(args, name):
             payload[name] = getattr(args, name)
     try:

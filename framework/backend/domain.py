@@ -40,6 +40,41 @@ class ExecutionState(str, Enum):
     RETURNING = "returning"
 
 
+class MovementState(str, Enum):
+    """
+    Describe the latest movement request outcome for a vehicle.
+
+    The kernel writes this field after every movement resolution so planners can
+    read a structured vehicle state instead of parsing rejection reason strings.
+    PARKED vehicles have no grid request; MOVED means movement was accepted
+    (including a successful dispatch exit); PLANNED_WAIT and NO_PLAN are
+    explicit same-cell waits and empty plans; DISPATCH_QUEUE means a parking
+    queue wait; NODE_CONFLICT, EDGE_SWAP and OCCUPIED_BY_STOPPED are traffic
+    rejections a planner may react to.
+    """
+
+    PARKED = "parked"
+    MOVED = "moved"
+    PLANNED_WAIT = "planned_wait"
+    NO_PLAN = "empty_plan"
+    NODE_CONFLICT = "node_conflict"
+    EDGE_SWAP = "edge_swap"
+    OCCUPIED_BY_STOPPED = "occupied_by_stopped_vehicle"
+    DISPATCH_QUEUE = "dispatch_queue"
+
+    @property
+    def is_traffic_blocked(self) -> bool:
+        """Return whether this state is a rejection caused by traffic conflicts."""
+        return self in TRAFFIC_BLOCK_STATES
+
+
+TRAFFIC_BLOCK_STATES = frozenset({
+    MovementState.NODE_CONFLICT,
+    MovementState.EDGE_SWAP,
+    MovementState.OCCUPIED_BY_STOPPED,
+})
+
+
 class TaskState(str, Enum):
     """
     Track task release, assignment and completion independently of vehicle movement.
@@ -292,7 +327,7 @@ class Vehicle:
         parking_area          (ParkingArea | None): Associated parking while queued or returning.
         return_target         (Cell | None): Parking entry used during return travel.
         service_remaining     (int): Service ticks still needed at pickup or dropoff.
-        wait_ticks            (int): Consecutive waiting ticks used by planners and arbitration.
+        wait_ticks            (int): Consecutive waiting ticks used by planners and by the kernel generic fallback score.
         total_wait            (int): Accumulated waits, excluding the initial dispatch queue.
         initial_dispatch_wait (int): Queue waits before the first departure.
         distance              (int): Accumulated movement including parking entry and exit.
@@ -300,6 +335,7 @@ class Vehicle:
         has_departed          (bool): Whether the vehicle has ever entered the grid.
         queue_order           (int): Assignment sequence used for parking dispatch order.
         blocked_reason        (str): Latest movement or dispatch blocking reason.
+        movement_state        (MovementState): Structured outcome of the latest movement request.
     """
 
     id: int
@@ -318,6 +354,7 @@ class Vehicle:
     has_departed: bool = False
     queue_order: int = 0
     blocked_reason: str = ""
+    movement_state: MovementState = MovementState.PARKED
 
     @property
     def is_loaded(self) -> bool:

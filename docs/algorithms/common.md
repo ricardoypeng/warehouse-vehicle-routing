@@ -56,7 +56,9 @@ class MyPlanner(Algorithm):
 ALGORITHMS = [AlgorithmSpec('planning', 'my_planner', '我的规划', 'MyPlanner')]
 ```
 
-返回新计划替换剩余计划；返回空计划清空；不返回某辆车则保留。计划是纯数据，小车只按队首执行。算法可通过快照读取等待时间、现有计划、占用和 last_results 来决定是否改计划。
+返回新计划替换剩余计划；返回空计划清空；不返回某辆车则保留。计划是纯数据，小车只按队首执行。算法可通过快照读取等待时间、现有计划、占用、last_results 和车辆的 `movement_state` 来决定是否改计划；`movement_state` 是内核写入的结构化移动结果，比解析 reason 字符串稳定。
+
+`PlanUpdates` 还可带可选的 `claim_scores: dict[int, float]`：每辆车的完整仲裁分数。规划器从快照读取等待 tick、是否在路口格等状态，再加上本算法自己的特征权重，整体提交；内核直接比较这些分数，不再叠加等待/位置项。没有提交分数的车辆使用内核的通用回退分。分数必须是有限数值且车辆存在。
 
 算法可以维护多车共享预约表和学习模型；这些属于算法实例。算法不能修改真实位置、占用和任务归属。后端计算使用 self.backend，保证 CPU / CUDA 选择不会改变插件接口。需要张量计算的算法在首次使用时调用 `self.backend.tensor_entry()` 领取 tensor runtime；框架只分发入口和设备，路由、回退与算法状态仍由算法负责。
 

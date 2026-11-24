@@ -6,8 +6,8 @@
 
 | 层级 | 入口 | 用途 |
 | --- | --- | --- |
-| 后端自动化测试 | [main.py](../main.py) 的 `self-test` 命令 | 执行 142 个 Python unittest 用例，检查实体、移动、任务、算法、参数、HTTP 和并行执行 |
-| 浏览器回归测试 | [浏览器脚本目录](../tests/) 中的 `browser_*.cjs` | 使用真实浏览器检查交互、参数编辑、事件、列表展开和渲染稳定性；不计入 142 个 Python 用例 |
+| 后端自动化测试 | [main.py](../main.py) 的 `self-test` 命令 | 执行 148 个 Python unittest 用例，检查实体、移动、任务、算法、参数、HTTP 和并行执行 |
+| 浏览器回归测试 | [浏览器脚本目录](../tests/) 中的 `browser_*.cjs` | 使用真实浏览器检查交互、参数编辑、事件、列表展开和渲染稳定性；不计入 148 个 Python 用例 |
 | 算法启动检查 | [Registry](../framework/registry.py) | 导入候选算法并运行小型场景，仅将通过的算法加入可选列表 |
 | 静态类型检查 | [Python 源码](../framework/) 及算法、入口和测试 | 检查类型契约；与运行测试分开执行，不证明运行逻辑或算法效果 |
 
@@ -33,7 +33,7 @@
 - 距离数组缓存与候选路线缓存使用不同数据结构、计费规则和调用位置，需要各自验证。
 - 后端 JSON 正确与浏览器实际展示正确需要分别验证；播放竞态和绘制稳定性也不由基础点击检查替代。
 
-[测试夹具目录](../tests/) 中的 `probe_*.py` 提供故意出错、挂起、慢速推进和显式等待的算法，不计入 142 个 unittest 方法。删除夹具会失去对应失败路径的可重复触发方式。
+[测试夹具目录](../tests/) 中的 `probe_*.py` 提供故意出错、挂起、慢速推进和显式等待的算法，不计入 148 个 unittest 方法。删除夹具会失去对应失败路径的可重复触发方式。
 
 | 变更范围 | 建议验证 |
 | --- | --- |
@@ -46,6 +46,8 @@
 共有 10 个功能浏览器脚本，另有 1 个前端性能基准；它们不在每次 Python self-test 中自动启动。
 
 ## 后端用例
+
+以下按模块列出关键覆盖；算法专属细节见对应算法文档。
 
 ### 实体、地图和只读边界：6 个
 
@@ -62,7 +64,7 @@
 
 只读测试中的类型转换或动态赋值用于故意发起非法写入，不代表算法获得了修改真实状态的接口。
 
-### 移动仲裁和任务生命周期：12 个
+### 移动仲裁和任务生命周期：18 个
 
 源码：[test_framework.py / TransitionTests](../tests/test_framework.py)。规则依据见 [架构与状态边界](architecture.md)。
 
@@ -74,7 +76,13 @@
 | `test_spawned_vehicle_is_waiting_not_moving` | 一辆车获得任务并刚出库 | 快照显示等待，不把尚未执行路上移动的车辆计为 moving |
 | `test_traffic_aware_smoke` | 使用带自定义参数的 TrafficAware 跑小型场景 | 在给定 tick 预算内完成，世界不变量成立 |
 | `test_failed_step_retains_plan_and_explicit_wait_consumes` | 先执行同格点等待，再检查被停止车辆挡住的移动 | 显式等待消费一步；阻塞移动保留原计划，并记录阻塞原因 |
-| `test_conflicting_claim_keeps_loser_plan` | 两辆车竞争同一目标格点 | 仲裁选出一辆，获准车辆消费步骤，败方保留步骤 |
+| `test_conflicting_claim_keeps_loser_plan` | 两辆车竞争同一目标格点，其中一辆等待更久 | 等待更久（优先级更高）的车辆获准并消费步骤，败方保留步骤 |
+| `test_equal_priority_keeps_first_request` | 两辆普通道路上的车优先级相同、竞争同一目标格点 | 取仲裁器输入第一位（车辆 ID 升序）获准，另一辆保留步骤 |
+| `test_movement_state_tracks_latest_request` | 两车争同一格后检查胜者和败者；再执行一次显式等待 | 车辆 `movement_state` 分别为 `MOVED`、`NODE_CONFLICT`；显式等待为 `PLANNED_WAIT` |
+| `test_claim_score_decides_contested_junction` | 两车争同一路口格，分别给其中一辆提交完整 `claim_scores` | 内核直接使用提交的完整分数，改变赢家，败方保留步骤 |
+| `test_invalid_claim_scores_are_rejected` | claim score 为 NaN、inf、bool、字符串或未知车辆 | 内核在仲裁前抛 `ValueError` |
+| `test_free_chain_settles_before_contested_cell` | 一条三车跟车链终点为空，另有两车竞争同一空格 | 跟车链三车先整体结算；竞争格点按等待更久者获准，败方保留步骤 |
+| `test_contested_winner_blocked_by_stopped_claimant_is_rejected` | 两车竞争已被停住车辆占用的格点，另有一车停在别处 | 竞争赢家因目标格占用者不动被拒绝为 `occupied_by_stopped_vehicle`，败方为 `node_conflict` |
 | `test_assignment_atomic_and_canonical_plan_cells` | 提交重复任务分配，再提交另一张地图的格点 | 整批错误分配不部分生效；非当前地图原始对象的计划格点被拒绝 |
 | `test_task_references_and_completion` | 6 辆车执行 24 个任务 | 全部完成并入库，任务保留车辆历史引用，车辆清空当前任务，占用表为空 |
 | `test_real_cargo_lifecycle_and_snapshot` | 单车单任务，装卸时间非零 | 检查装货、运输、卸货及完成阶段的载货状态与快照信息 |
@@ -261,9 +269,9 @@ CUDA 请求允许回退 CPU。因此通过测试不一定表示执行过 GPU 运
 | `test_two_vehicle_swap_is_rejected` | 两辆车互相交换格点 | 不接纳任何车辆 |
 | `test_chain_into_free_cell_moves_together` | 前车请求空格，后车请求前车格点 | 两车一起移动（跟车链） |
 | `test_chain_behind_waiting_vehicle_is_masked` | 前车原地等待，后车请求前车格点 | 两车都不在移动集合 |
-| `test_single_claim_on_free_cell_uses_wait_priority` | 两车请求同一空格，等待值 1 与 5 | 只接纳等待更久的一辆 |
+| `test_single_claim_on_free_cell_uses_wait_priority` | 两车请求同一空格，等待 tick 分别为 0 与 3 | 只接纳优先级（等待更久）的一辆 |
 | `test_cycle_masks_outside_claimant_to_rotate` | 三车环，另有环外车辆请求环内格点 | 环内三车移动，环外车辆被掩码 |
-| `test_diagnosis_matches_kernel_resolution_when_masking_rescues_cycle` | 真实地图的有向四格环 + 一个高等待值的外部入口车辆；先诊断，再按掩码后的请求调用内核 `resolve_moves()` | 诊断集合包含环上四车；掩码后内核实际移动集合与之相等；不掩码时内核放行的车辆更少（外部车辆抢走环上格点导致级联冻结） |
+| `test_diagnosis_matches_kernel_resolution_when_masking_rescues_cycle` | 真实地图的有向四格环 + 一个等待超过默认路口位置加成（默认 30，测试取配置值 + 1）的外部入口车辆；先诊断，再按掩码后的请求调用内核 `resolve_moves()` | 诊断集合包含环上四车；掩码后内核实际移动集合与之相等；不掩码时内核放行的车辆更少（外部车辆抢走环上格点导致级联冻结） |
 | `test_forty_vehicle_deadlock_regression_finishes` | 默认地图 40 车、1000 任务、seed 0、3000 tick 预算 | 完成后全部 1000 个任务（同场景加入诊断前只完成 164 个，仅作对照，不在断言内） |
 
 ### 工具公共逻辑与比较 CLI：8 个

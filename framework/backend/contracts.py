@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, TypedDict
 
-from .domain import Cell, Map, MovementPlan, ExecutionState, TaskState
+from config.scenario import DEFAULTS
+
+from .domain import Cell, Map, MovementPlan, ExecutionState, MovementState, TaskState
 
 
 class BackendInfo(TypedDict):
@@ -128,6 +130,7 @@ class VehicleView:
         plan            (tuple[Cell, ...]): Queued steps, next cell first.
         wait_ticks      (int): Consecutive waiting ticks.
         parking_exit    (Cell | None): Exit used to estimate distance for a parked vehicle.
+        movement_state  (MovementState): Structured outcome of the latest movement request.
     """
 
     id: int
@@ -138,6 +141,7 @@ class VehicleView:
     plan: tuple[Cell, ...]
     wait_ticks: int
     parking_exit: Cell | None
+    movement_state: MovementState = MovementState.PARKED
 
     @property
     def is_loaded(self) -> bool:
@@ -179,6 +183,8 @@ class WorldView:
         tasks        (Mapping[int, TaskView]): Task snapshots indexed by ID.
         occupancy    (Mapping[int, VehicleView]): Vehicle at each occupied cell ID.
         last_results (tuple[MoveResult, ...]): Outcomes of the preceding movement step.
+        junction_wait_weight (float): Score per consecutive tick of waiting during movement arbitration.
+        junction_position_bonus (float): Score added when the claimant is already on a junction cell.
     """
 
     tick: int
@@ -187,6 +193,8 @@ class WorldView:
     tasks: Mapping[int, TaskView]
     occupancy: Mapping[int, VehicleView]
     last_results: tuple["MoveResult", ...] = ()
+    junction_wait_weight: float = DEFAULTS["junction_wait_weight"]
+    junction_position_bonus: float = DEFAULTS["junction_position_bonus"]
 
 
 @dataclass(frozen=True)
@@ -204,13 +212,20 @@ class AssignmentUpdates:
 @dataclass(frozen=True)
 class PlanUpdates:
     """
-    Propose replacement movement plans without changing physical state.
+    Propose replacement movement plans and optional complete claim scores.
 
     Attributes:
         plans (Mapping[int, MovementPlan]): Vehicle ID to replacement movement plan.
+        claim_scores (Mapping[int, float]): Complete arbitration score per vehicle
+            for contested cells. A planner reads waiting ticks and position from
+            the snapshot, computes the whole score and submits it here. When a
+            claimant has an entry, the kernel uses that value directly; otherwise
+            it falls back to its generic waiting/position score. Empty means no
+            planner-specific scores this tick.
     """
 
     plans: Mapping[int, MovementPlan]
+    claim_scores: Mapping[int, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
